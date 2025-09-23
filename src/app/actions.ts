@@ -261,17 +261,16 @@ export async function createBloodRequest(request: {
   // Create notifications for targeted responders
   const users = await getCollection('users');
   const potentialResponders = await users.find({
-      $or: [
-        // All hospitals and blood banks
-        { role: { $in: ['Hospital', 'Blood Bank'] } },
-        // Donors with matching blood type
-        { role: 'Donor', bloodType: request.bloodType }
-      ],
-      status: 'active' // Only notify active users
+      // Notify all active donors, hospitals, and blood banks
+      role: { $in: ['Donor', 'Hospital', 'Blood Bank'] },
+      status: 'active'
     }).toArray();
 
   const notifications = await getCollection('notifications');
   const notificationPromises = potentialResponders.map(responder => {
+    // Do not notify the requester themselves
+    if (responder.email === request.requester) return null;
+
     return notifications.insertOne({
       type: 'request',
       requestId: requestId,
@@ -284,7 +283,7 @@ export async function createBloodRequest(request: {
       read: false,
       message: `New blood request for ${request.bloodType} (${request.units} units).`,
     });
-  });
+  }).filter(Boolean); // Filter out null promises
   await Promise.all(notificationPromises);
 
   const finalRequest = await requests.findOne({_id: result.insertedId});
@@ -855,6 +854,7 @@ export async function createBloodOffer(offerData: Omit<BloodOffer, 'id' | 'date'
             message,
             bloodType: offerData.bloodType,
             units: offerData.units,
+            urgency: 'Low',
             date: new Date(),
             read: false,
         });

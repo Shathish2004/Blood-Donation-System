@@ -27,6 +27,7 @@ import { getDemandForecast, getHistoricalDataForForecast } from '@/app/actions';
 import { DemandForecastOutput } from '@/ai/flows/demand-forecasting';
 import { LoaderCircle, Sparkles, TrendingUp, TrendingDown, Minus } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
+import { cn } from '@/lib/utils';
 
 const forecastSchema = z.object({
   forecastPeriodDays: z.coerce

@@ -141,7 +141,7 @@ function DirectRequestDialog({
     return (
         <Dialog open={open} onOpenChange={setOpen}>
             <DialogTrigger asChild>
-                <Button size="sm" disabled={!recipient.availableBloodTypes && recipient.role !== 'Donor'}>
+                <Button size="sm" disabled={recipient.role !== 'Donor' && (!recipient.availableBloodTypes || recipient.availableBloodTypes.length === 0)}>
                     <Send className="mr-2 h-3 w-3" />
                     Request
                 </Button>
@@ -338,9 +338,9 @@ function RequesterPageContent() {
 
   React.useEffect(() => {
     const fetchUserAndData = async () => {
+      setLoading(true);
       const email = sessionStorage.getItem('currentUserEmail');
       if (email) {
-        setLoading(true);
         const userData = await getUser(email);
         if (userData) {
           setUser(userData);
@@ -348,10 +348,8 @@ function RequesterPageContent() {
           await fetchRequests(email);
           await fetchDonors();
         }
-        setLoading(false);
-      } else {
-        setLoading(false);
       }
+      setLoading(false);
     };
 
     fetchUserAndData();
@@ -422,7 +420,7 @@ function RequesterPageContent() {
 
   return (
     <>
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
             <h1 className="text-2xl font-bold">Individual Dashboard</h1>
             <EmergencyPollDialog user={user} onSent={() => { /* maybe refresh some data if needed */ }} />
         </div>
@@ -586,26 +584,32 @@ function RequesterPageContent() {
                             </TableRow>
                         </TableHeader>
                         <TableBody>
-                            {potentialDonors.map(donor => (
-                                <TableRow key={donor.email}>
-                                    <TableCell>{donor.name}</TableCell>
-                                    <TableCell>
-                                      <Badge variant={donor.role === 'Donor' ? 'secondary' : 'outline'}>{donor.role}</Badge>
-                                    </TableCell>
-                                    <TableCell>{donor.city}, {donor.state}</TableCell>
-                                    <TableCell className="flex flex-wrap gap-1">
-                                        {donor.role === 'Donor' && donor.bloodType ? <Badge variant="outline" className="text-primary border-primary/50">{donor.bloodType}</Badge> 
-                                        : donor.availableBloodTypes && donor.availableBloodTypes.length > 0 ? (
-                                            donor.availableBloodTypes.map(type => <Badge key={type} variant="outline">{type}</Badge>)
-                                        ) : (
-                                            <span className="text-xs text-muted-foreground">N/A</span>
-                                        )}
-                                    </TableCell>
-                                    <TableCell className="text-right">
-                                        <DirectRequestDialog recipient={donor} requester={user} onSuccess={handleDirectRequestSuccess} />
-                                    </TableCell>
+                            {potentialDonors.length > 0 ? (
+                                potentialDonors.map(donor => (
+                                    <TableRow key={donor.email}>
+                                        <TableCell>{donor.name}</TableCell>
+                                        <TableCell>
+                                          <Badge variant={donor.role === 'Donor' ? 'secondary' : 'outline'}>{donor.role}</Badge>
+                                        </TableCell>
+                                        <TableCell>{donor.city}, {donor.state}</TableCell>
+                                        <TableCell className="flex flex-wrap gap-1">
+                                            {donor.role === 'Donor' && donor.bloodType ? <Badge variant="outline" className="text-primary border-primary/50">{donor.bloodType}</Badge> 
+                                            : donor.availableBloodTypes && donor.availableBloodTypes.length > 0 ? (
+                                                donor.availableBloodTypes.map(type => <Badge key={type} variant="outline">{type}</Badge>)
+                                            ) : (
+                                                <span className="text-xs text-muted-foreground">N/A</span>
+                                            )}
+                                        </TableCell>
+                                        <TableCell className="text-right">
+                                            <DirectRequestDialog recipient={donor} requester={user} onSuccess={handleDirectRequestSuccess} />
+                                        </TableCell>
+                                    </TableRow>
+                                ))
+                            ) : (
+                                <TableRow>
+                                    <TableCell colSpan={5} className="text-center h-24">No available donors or facilities found.</TableCell>
                                 </TableRow>
-                            ))}
+                            )}
                         </TableBody>
                      </Table>
                 </CardContent>
@@ -637,9 +641,9 @@ function RequesterPageContent() {
                                 <FormItem><FormLabel>Blood Type</FormLabel><FormControl><Input {...field} readOnly /></FormControl><FormMessage/></FormItem>
                             )}/>
                              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                                <FormField control={form.control} name="city" render={({ field }) => (<FormItem><FormLabel>City</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>)} />
-                                <FormField control={form.control} name="state" render={({ field }) => (<FormItem><FormLabel>State</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>)} />
-                                <FormField control={form.control} name="country" render={({ field }) => (<FormItem><FormLabel>Country</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>)} />
+                                <FormField control={profileForm.control} name="city" render={({ field }) => (<FormItem><FormLabel>City</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>)} />
+                                <FormField control={profileForm.control} name="state" render={({ field }) => (<FormItem><FormLabel>State</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>)} />
+                                <FormField control={profileForm.control} name="country" render={({ field }) => (<FormItem><FormLabel>Country</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>)} />
                             </div>
                         </CardContent>
                         <CardFooter>

@@ -570,7 +570,7 @@ function BloodBankPageContent() {
       ]);
       setUser(userData);
       setInventory(inventoryData);
-      setRequests(notifications.filter(n => n.type === 'request' || n.type === 'claim'));
+      setRequests(notifications.filter(n => ['request', 'claim', 'offer'].includes(n.type)));
       setRequestHistory(historyData);
       setPotentialFacilities(facilitiesData.filter(f => (f.role === 'Hospital' || f.role === 'Blood Bank') && f.email !== email));
       setSentTransfers(sentData);
@@ -860,44 +860,50 @@ function BloodBankPageContent() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {potentialFacilities.map((facility) => (
-                  <TableRow key={facility.email}>
-                    <TableCell>{facility.name}</TableCell>
-                    <TableCell>
-                      <Badge
-                        variant={
-                          facility.role === 'Blood Bank' ? 'secondary' : 'outline'
-                        }
-                      >
-                        {facility.role}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      {facility.city}, {facility.state}
-                    </TableCell>
-                    <TableCell className="flex flex-wrap gap-1">
-                      {facility.availableBloodTypes &&
-                      facility.availableBloodTypes.length > 0 ? (
-                        facility.availableBloodTypes.map((type) => (
-                          <Badge key={type} variant="outline">
-                            {type}
+                {potentialFacilities.length > 0 ? (
+                    potentialFacilities.map((facility) => (
+                      <TableRow key={facility.email}>
+                        <TableCell>{facility.name}</TableCell>
+                        <TableCell>
+                          <Badge
+                            variant={
+                              facility.role === 'Blood Bank' ? 'secondary' : 'outline'
+                            }
+                          >
+                            {facility.role}
                           </Badge>
-                        ))
-                      ) : (
-                        <span className="text-xs text-muted-foreground">
-                          No inventory data
-                        </span>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <DirectRequestDialog
-                        recipient={facility}
-                        requester={user!}
-                        onSuccess={handleSave}
-                      />
-                    </TableCell>
-                  </TableRow>
-                ))}
+                        </TableCell>
+                        <TableCell>
+                          {facility.city}, {facility.state}
+                        </TableCell>
+                        <TableCell className="flex flex-wrap gap-1">
+                          {facility.availableBloodTypes &&
+                          facility.availableBloodTypes.length > 0 ? (
+                            facility.availableBloodTypes.map((type) => (
+                              <Badge key={type} variant="outline">
+                                {type}
+                              </Badge>
+                            ))
+                          ) : (
+                            <span className="text-xs text-muted-foreground">
+                              No inventory data
+                            </span>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <DirectRequestDialog
+                            recipient={facility}
+                            requester={user!}
+                            onSuccess={handleSave}
+                          />
+                        </TableCell>
+                      </TableRow>
+                    ))
+                ) : (
+                    <TableRow>
+                        <TableCell colSpan={5} className="text-center h-24">No other facilities found.</TableCell>
+                    </TableRow>
+                )}
               </TableBody>
             </Table>
           </CardContent>

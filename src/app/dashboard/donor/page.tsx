@@ -256,7 +256,7 @@ function DonorPageContent() {
         }
         
         const incomingRequests = userNotifications.filter(
-            (notification) => notification.type === 'request'
+            (notification) => notification.type === 'request' || notification.type === 'info'
         );
         setRequests(incomingRequests);
         setDonationHistory(history);
@@ -536,26 +536,33 @@ function DonorPageContent() {
                         </Badge>
                       </TableCell>
                       <TableCell className="text-right space-x-2">
-                        <Button
-                          variant="default"
-                          size="sm"
-                          onClick={() => handleAcceptRequest(req)}
-                          disabled={!!responding}
-                        >
-                          {responding === req.id ? (
-                            <LoaderCircle className="h-4 w-4 animate-spin" />
-                          ) : (
+                        {req.type === 'request' && req.requestId && (
                             <>
-                              <Check className="mr-1 h-4 w-4" /> Accept
+                                <Button
+                                variant="default"
+                                size="sm"
+                                onClick={() => handleAcceptRequest(req)}
+                                disabled={!!responding}
+                                >
+                                {responding === req.id ? (
+                                    <LoaderCircle className="h-4 w-4 animate-spin" />
+                                ) : (
+                                    <>
+                                    <Check className="mr-1 h-4 w-4" /> Accept
+                                    </>
+                                )}
+                                </Button>
+                                <DeclineRequestDialog
+                                notification={req}
+                                onConfirm={(reason) =>
+                                    handleDeclineRequest(req, reason)
+                                }
+                                />
                             </>
-                          )}
-                        </Button>
-                        <DeclineRequestDialog
-                          notification={req}
-                          onConfirm={(reason) =>
-                            handleDeclineRequest(req, reason)
-                          }
-                        />
+                        )}
+                        {req.type === 'info' && (
+                             <p className="text-xs text-muted-foreground pr-2">Informational broadcast</p>
+                        )}
                       </TableCell>
                     </TableRow>
                   ))

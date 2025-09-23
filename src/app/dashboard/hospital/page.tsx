@@ -58,7 +58,7 @@ import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { getUser, getBloodRequestsForUser, getHospitalInventory, addBloodUnit, updateBloodUnit, deleteBloodUnit, getNotificationsForUser, respondToRequest, declineRequest, User, getPotentialDonors, createDirectBloodRequest, addTransfer, getSentTransfers, getReceivedTransfers, createBloodOffer, getBloodOffers, claimBloodOffer, cancelBloodOffer } from '@/app/actions';
 import { Suspense } from 'react';
-import { Form, FormControl, FormField, FormMessage, FormLabel } from '@/components/ui/form';
+import { Form, FormControl, FormField, FormMessage, FormLabel, FormItem } from '@/components/ui/form';
 import { useSearchParams } from 'next/navigation';
 import { AIForms } from '../blood-bank/ai-forms';
 
@@ -201,7 +201,7 @@ function DirectRequestDialog({
     return (
         <Dialog open={open} onOpenChange={setOpen}>
             <DialogTrigger asChild>
-                <Button size="sm" disabled={!recipient.availableBloodTypes && recipient.role !== 'Donor'}>
+                <Button size="sm" disabled={recipient.role !== 'Donor' && (!recipient.availableBloodTypes || recipient.availableBloodTypes.length === 0)}>
                     <Send className="mr-2 h-3 w-3" />
                     Request
                 </Button>
@@ -567,7 +567,7 @@ function HospitalPageContent() {
         getBloodOffers(),
       ]);
       setInventory(inventoryData);
-      setRequests(notifications.filter(n => n.type === 'request' || n.type === 'claim'));
+      setRequests(notifications.filter(n => ['request', 'claim', 'offer'].includes(n.type)));
       setRequestHistory(historyData);
       setUser(userData);
       setPotentialDonors(donorsData);
@@ -582,6 +582,7 @@ function HospitalPageContent() {
   }, [toast]);
 
   React.useEffect(() => {
+    setLoading(true);
     const email = sessionStorage.getItem('currentUserEmail');
     if (email) {
       fetchData(email);
@@ -592,6 +593,7 @@ function HospitalPageContent() {
   
   const handleSave = () => {
     if (user?.email) {
+      setLoading(true);
       fetchData(user.email);
     }
   };
@@ -814,6 +816,7 @@ function HospitalPageContent() {
                           className={cn(
                             req.type === 'request' && 'border-blue-500 text-blue-500',
                             req.type === 'claim' && 'border-green-500 text-green-500',
+                            req.type === 'offer' && 'border-purple-500 text-purple-500'
                           )}
                         >
                           {req.type}
@@ -844,8 +847,8 @@ function HospitalPageContent() {
                                 />
                             </>
                         )}
-                         {req.type === 'claim' && (
-                             <Button variant="ghost" size="sm" disabled>Claimed</Button>
+                         {(req.type === 'claim' || req.type === 'offer') && (
+                             <Button variant="ghost" size="sm" disabled>View Offer</Button>
                          )}
                       </TableCell>
                     </TableRow>
@@ -883,7 +886,7 @@ function HospitalPageContent() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {potentialDonors.filter(d => d.role !== 'Donor').map((facility) => (
+                {potentialDonors.filter(d => d.role !== 'Donor' && d.email !== user?.email).map((facility) => (
                   <TableRow key={facility.email}>
                     <TableCell>{facility.name}</TableCell>
                     <TableCell>
@@ -921,6 +924,11 @@ function HospitalPageContent() {
                     </TableCell>
                   </TableRow>
                 ))}
+                {potentialDonors.filter(d => d.role !== 'Donor' && d.email !== user?.email).length === 0 && (
+                    <TableRow>
+                        <TableCell colSpan={5} className="h-24 text-center">No other facilities found.</TableCell>
+                    </TableRow>
+                )}
               </TableBody>
             </Table>
           </CardContent>
@@ -964,6 +972,11 @@ function HospitalPageContent() {
                     </TableCell>
                   </TableRow>
                 ))}
+                {potentialDonors.filter(d => d.role === 'Donor').length === 0 && (
+                    <TableRow>
+                        <TableCell colSpan={4} className="h-24 text-center">No donors found.</TableCell>
+                    </TableRow>
+                )}
               </TableBody>
             </Table>
           </CardContent>
@@ -1183,3 +1196,5 @@ export default function HospitalPage() {
     </Suspense>
   );
 }
+
+    
