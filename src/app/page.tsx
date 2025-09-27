@@ -1,3 +1,4 @@
+
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import {
@@ -7,6 +8,7 @@ import {
   User,
   Droplet,
   LogIn,
+  UserPlus,
 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -56,14 +58,24 @@ export default function Home() {
         <CardHeader>
           <CardTitle className="text-center text-2xl font-headline">Get Started</CardTitle>
           <CardDescription className="text-center">
-            Log in to your account to continue.
+            Login or create a new account to continue.
           </CardDescription>
         </CardHeader>
-        <CardContent>
-           <Link href="/login" passHref>
-             <Button className="w-full">
-              <LogIn className="mr-2" />
-              Login
+        <CardContent className="grid grid-cols-2 gap-4">
+           <Link href="/login">
+             <Button asChild className="w-full">
+                <span>
+                  <LogIn className="mr-2" />
+                  Login
+                </span>
+            </Button>
+          </Link>
+          <Link href="/register">
+             <Button asChild variant="outline" className="w-full">
+                <span>
+                  <UserPlus className="mr-2" />
+                  Register
+                </span>
             </Button>
           </Link>
         </CardContent>

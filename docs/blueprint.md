@@ -1,4 +1,4 @@
-# **App Name**: Centralized Blood Donation System
+# App Name: Centralized Blood Donation System
 
 ## Core Features:
 
@@ -13,13 +13,3 @@
 - Hospital History Management: Maintain logs of past blood requests, fulfilled units, and emergency polls.
 - Redistribution History: Track redistribution activities with details of source, destination, and transferred units.
 - Blood Bank History Management: Record past requests, fulfilled distributions, and alerts.
-
-## Style Guidelines:
-
-- Primary color: Deep rose (#C72E5A) evoking a sense of care and urgency, without being as literal as red.
-- Background color: Light pale rose (#F4E5E9) for a calming, supportive backdrop.
-- Accent color: Pale purple (#957DAD) as a contrasting accent that provides visual interest without clashing.
-- Body and headline font: 'PT Sans' (sans-serif) for clear readability and a modern yet accessible feel.
-- Use simple, clear icons to represent different blood types, institutions, and actions. Consistent styling is key.
-- Maintain a clean, user-friendly layout with clear hierarchy. Prioritize ease of navigation for all user types (donors, individuals, hospitals, blood banks).
-- Use subtle animations to indicate status changes (e.g., availability updates, request confirmations) without distracting from the user experience.

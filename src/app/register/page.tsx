@@ -136,7 +136,7 @@ export default function RegisterPage() {
 
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-background p-4">
-      <div className="w-full max-w-md">
+      <div className="w-full max-w-2xl">
         <div className="text-center mb-8">
             <div className="flex justify-center items-center mb-4">
                 <Droplet className="h-10 w-10 text-primary" />
@@ -198,96 +198,94 @@ export default function RegisterPage() {
                     </FormItem>
                   )}
                 />
-
-                {/* Common Fields */}
-                 <FormField
-                  control={form.control}
-                  name="name"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>{selectedRole === 'Hospital' ? 'Hospital Name' : selectedRole === 'Blood Bank' ? 'Blood Bank Name' : 'Full Name'}</FormLabel>
-                      <FormControl>
-                        <Input placeholder={selectedRole === 'Hospital' ? 'e.g., City General Hospital' : selectedRole === 'Blood Bank' ? 'e.g., Regional Blood Bank' : 'e.g., John Doe'} {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                 <FormField
-                  control={form.control}
-                  name="email"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>{selectedRole === 'Hospital' ? 'Hospital Email' : selectedRole === 'Blood Bank' ? 'Blood Bank Email' : 'Email'}</FormLabel>
-                      <FormControl>
-                        <Input type="email" placeholder="user@email.com" {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                 <FormField
-                  control={form.control}
-                  name="password"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Password</FormLabel>
-                       <FormControl>
-                        <div className="relative">
-                          <Input
-                            type={showPassword ? 'text' : 'password'}
-                            placeholder="********"
-                            {...field}
-                          />
-                          <button
-                            type="button"
-                            onClick={() => setShowPassword(!showPassword)}
-                            className="absolute inset-y-0 right-0 flex items-center pr-3 text-muted-foreground"
-                          >
-                            {showPassword ? (
-                              <EyeOff className="h-5 w-5" />
-                            ) : (
-                              <Eye className="h-5 w-5" />
-                            )}
-                          </button>
-                        </div>
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="mobileNumber"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Mobile Number</FormLabel>
-                      <FormControl>
-                        <Input placeholder="123-456-7890" {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                {/* Individual/Donor Fields */}
-                {(selectedRole === 'Individual' || selectedRole === 'Donor') && (
-                  <>
-                    <FormField control={form.control} name="address" render={({ field }) => (<FormItem><FormLabel>Address</FormLabel><FormControl><Input placeholder="123 Main St" {...field} /></FormControl><FormMessage /></FormItem>)} />
-                    <FormField control={form.control} name="bloodType" render={({ field }) => (<FormItem><FormLabel>Blood Type</FormLabel><Select onValueChange={field.onChange} defaultValue={field.value}><FormControl><SelectTrigger><SelectValue placeholder="Select blood type" /></SelectTrigger></FormControl><SelectContent>{bloodTypes.map(type=><SelectItem key={type} value={type}>{type}</SelectItem>)}</SelectContent></Select><FormMessage /></FormItem>)} />
-                  </>
-                )}
-
-                {/* Hospital/Blood Bank Fields */}
-                {(selectedRole === 'Hospital' || selectedRole === 'Blood Bank') && (
-                    <>
-                        <FormField control={form.control} name="licenseNo" render={({ field }) => (<FormItem><FormLabel>{selectedRole === 'Hospital' ? 'Hospital License Number' : 'Blood Bank License Number'}</FormLabel><FormControl><Input placeholder="LIC123456" {...field} /></FormControl><FormMessage /></FormItem>)} />
-                        <FormField control={form.control} name="location" render={({ field }) => (<FormItem><FormLabel>Location</FormLabel><FormControl><Input placeholder="e.g. Downtown Core" {...field} /></FormControl><FormMessage /></FormItem>)} />
-                    </>
-                )}
                 
-                {/* Common Location Fields */}
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4">
+                    <FormField
+                      control={form.control}
+                      name="name"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>{selectedRole === 'Hospital' ? 'Hospital Name' : selectedRole === 'Blood Bank' ? 'Blood Bank Name' : 'Full Name'}</FormLabel>
+                          <FormControl>
+                            <Input placeholder={selectedRole === 'Hospital' ? 'e.g., City General Hospital' : selectedRole === 'Blood Bank' ? 'e.g., Regional Blood Bank' : 'e.g., John Doe'} {...field} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="email"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>{selectedRole === 'Hospital' ? 'Hospital Email' : selectedRole === 'Blood Bank' ? 'Blood Bank Email' : 'Email'}</FormLabel>
+                          <FormControl>
+                            <Input type="email" placeholder="user@email.com" {...field} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="password"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Password</FormLabel>
+                           <FormControl>
+                            <div className="relative">
+                              <Input
+                                type={showPassword ? 'text' : 'password'}
+                                placeholder="********"
+                                {...field}
+                              />
+                              <button
+                                type="button"
+                                onClick={() => setShowPassword(!showPassword)}
+                                className="absolute inset-y-0 right-0 flex items-center pr-3 text-muted-foreground"
+                              >
+                                {showPassword ? (
+                                  <EyeOff className="h-5 w-5" />
+                                ) : (
+                                  <Eye className="h-5 w-5" />
+                                )}
+                              </button>
+                            </div>
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="mobileNumber"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Mobile Number</FormLabel>
+                          <FormControl>
+                            <Input placeholder="123-456-7890" {...field} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    {/* Individual/Donor Fields */}
+                    {(selectedRole === 'Individual' || selectedRole === 'Donor') && (
+                      <>
+                        <FormField control={form.control} name="address" render={({ field }) => (<FormItem className="md:col-span-2"><FormLabel>Address</FormLabel><FormControl><Input placeholder="123 Main St" {...field} /></FormControl><FormMessage /></FormItem>)} />
+                        <FormField control={form.control} name="bloodType" render={({ field }) => (<FormItem><FormLabel>Blood Type</FormLabel><Select onValueChange={field.onChange} defaultValue={field.value}><FormControl><SelectTrigger><SelectValue placeholder="Select blood type" /></SelectTrigger></FormControl><SelectContent>{bloodTypes.map(type=><SelectItem key={type} value={type}>{type}</SelectItem>)}</SelectContent></Select><FormMessage /></FormItem>)} />
+                      </>
+                    )}
+
+                    {/* Hospital/Blood Bank Fields */}
+                    {(selectedRole === 'Hospital' || selectedRole === 'Blood Bank') && (
+                        <>
+                            <FormField control={form.control} name="licenseNo" render={({ field }) => (<FormItem><FormLabel>{selectedRole === 'Hospital' ? 'Hospital License Number' : 'Blood Bank License Number'}</FormLabel><FormControl><Input placeholder="LIC123456" {...field} /></FormControl><FormMessage /></FormItem>)} />
+                            <FormField control={form.control} name="location" render={({ field }) => (<FormItem><FormLabel>Location</FormLabel><FormControl><Input placeholder="e.g. Downtown Core" {...field} /></FormControl><FormMessage /></FormItem>)} />
+                        </>
+                    )}
+                    
                     <FormField control={form.control} name="city" render={({ field }) => (<FormItem><FormLabel>City</FormLabel><FormControl><Input placeholder="e.g., New York" {...field} /></FormControl><FormMessage /></FormItem>)} />
                     <FormField control={form.control} name="state" render={({ field }) => (<FormItem><FormLabel>State</FormLabel><FormControl><Input placeholder="e.g., NY" {...field} /></FormControl><FormMessage /></FormItem>)} />
                     <FormField control={form.control} name="country" render={({ field }) => (<FormItem><FormLabel>Country</FormLabel><FormControl><Input placeholder="e.g., USA" {...field} /></FormControl><FormMessage /></FormItem>)} />

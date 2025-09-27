@@ -1,3 +1,4 @@
+
 'use client';
 
 import * as React from 'react';
@@ -40,11 +41,11 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
-import { format } from 'date-fns';
-import { bloodTypes } from '@/lib/data';
-import type { Urgency, BloodRequest } from '@/lib/types';
+import { format, formatDistanceToNow, parseISO } from 'date-fns';
+import { bloodTypes, donationTypes } from '@/lib/data';
+import type { Urgency, BloodRequest, DonationType } from '@/lib/types';
 import { cn } from '@/lib/utils';
-import { Siren, XCircle, LoaderCircle, Send } from 'lucide-react';
+import { Siren, XCircle, LoaderCircle, Send, Search, Mail, Phone, Check, HandHeart, X } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -56,11 +57,15 @@ import {
 } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
 import { useSearchParams } from 'next/navigation';
-import { Suspense } from 'react';
-import { getUser, updateUserData, User, createBloodRequest, getBloodRequestsForUser, cancelBloodRequest, getPotentialDonors, createDirectBloodRequest, createEmergencyPoll } from '@/app/actions';
+import { Suspense, useCallback } from 'react';
+import { getUser, updateUserData, User, createBloodRequest, getBloodRequestsForUser, cancelBloodRequest, getPotentialDonors, createDirectBloodRequest, createEmergencyPoll, getNotificationsForUser, respondToRequest, declineRequest } from '@/app/actions';
+import type { Notification } from '@/lib/types';
 
 const requestSchema = z.object({
   bloodType: z.string().nonempty({ message: 'Blood type is required.' }),
+  donationType: z.custom<DonationType>((val) => donationTypes.includes(val as DonationType), {
+    message: "Invalid donation type.",
+  }),
   units: z.coerce
     .number()
     .min(1, { message: 'Must request at least 1 unit.' })
@@ -84,10 +89,16 @@ type ProfileFormValues = z.infer<typeof profileSchema>;
 
 const directRequestSchema = z.object({
     bloodType: z.string().nonempty({ message: 'Blood type is required.' }),
+    donationType: z.custom<DonationType>(),
     units: z.coerce.number().min(1, 'At least 1 unit is required.'),
     urgency: z.enum(['Low', 'Medium', 'High', 'Critical']),
 });
 type DirectRequestFormValues = z.infer<typeof directRequestSchema>;
+
+const emergencyPollSchema = z.object({
+    message: z.string().min(10, "Please provide a detailed message for the emergency.")
+});
+type EmergencyPollFormValues = z.infer<typeof emergencyPollSchema>;
 
 
 const urgencyColors: Record<Urgency, string> = {
@@ -97,6 +108,44 @@ const urgencyColors: Record<Urgency, string> = {
     Critical: 'bg-red-100 text-red-800 border-red-200',
 };
 
+function DeclineRequestDialog({ notification, onConfirm }: { notification: Notification, onConfirm: (reason: string) => void }) {
+    const [reason, setReason] = React.useState('');
+    const [open, setOpen] = React.useState(false);
+
+    const handleConfirm = () => {
+        onConfirm(reason);
+        setOpen(false);
+    }
+
+    return (
+        <Dialog open={open} onOpenChange={setOpen}>
+            <DialogTrigger asChild>
+                <Button variant="outline" size="sm">
+                    <X className="mr-1 h-4 w-4" /> Decline
+                </Button>
+            </DialogTrigger>
+            <DialogContent>
+                <DialogHeader>
+                    <DialogTitle>Decline Request</DialogTitle>
+                    <DialogDescription>
+                        Please provide a reason for declining this request. This will be shared with the requester.
+                    </DialogDescription>
+                </DialogHeader>
+                <div className="py-4">
+                    <Textarea 
+                        placeholder="e.g., Currently unavailable, Not a match, etc." 
+                        value={reason}
+                        onChange={(e) => setReason(e.target.value)}
+                    />
+                </div>
+                <DialogFooter>
+                    <Button variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>
+                    <Button variant="destructive" onClick={handleConfirm} disabled={!reason}>Confirm Decline</Button>
+                </DialogFooter>
+            </DialogContent>
+        </Dialog>
+    )
+}
 
 function DirectRequestDialog({
     requester,
@@ -114,7 +163,8 @@ function DirectRequestDialog({
         defaultValues: {
             units: 1,
             urgency: 'Medium',
-            bloodType: recipient.role === 'Donor' ? recipient.bloodType : (recipient.availableBloodTypes && recipient.availableBloodTypes.length > 0 ? recipient.availableBloodTypes[0] : ''),
+            donationType: 'whole_blood',
+            bloodType: (recipient.role === 'Donor' || recipient.role === 'Individual') ? recipient.bloodType : (recipient.availableBloodTypes && recipient.availableBloodTypes.length > 0 ? recipient.availableBloodTypes[0] : undefined),
         },
     });
 
@@ -137,11 +187,22 @@ function DirectRequestDialog({
             toast({ variant: 'destructive', title: 'Error', description: e.message || 'Failed to send direct request.' });
         }
     };
+    
+    const isRecipientRequestable = () => {
+        if (recipient.role === 'Donor' || recipient.role === 'Individual') {
+            return !!recipient.bloodType;
+        }
+        if (recipient.role === 'Hospital' || recipient.role === 'Blood Bank') {
+            return recipient.availableBloodTypes && recipient.availableBloodTypes.length > 0;
+        }
+        return false;
+    }
+
 
     return (
         <Dialog open={open} onOpenChange={setOpen}>
             <DialogTrigger asChild>
-                <Button size="sm" disabled={recipient.role !== 'Donor' && (!recipient.availableBloodTypes || recipient.availableBloodTypes.length === 0)}>
+                <Button size="sm" disabled={!isRecipientRequestable()}>
                     <Send className="mr-2 h-3 w-3" />
                     Request
                 </Button>
@@ -158,18 +219,42 @@ function DirectRequestDialog({
                         <div className="py-4 space-y-4">
                             <FormField
                                 control={form.control}
+                                name="donationType"
+                                render={({ field }) => (
+                                    <FormItem>
+                                    <FormLabel>Donation Type</FormLabel>
+                                    <Select onValueChange={field.onChange} defaultValue={field.value}>
+                                        <FormControl>
+                                        <SelectTrigger>
+                                            <SelectValue placeholder="Select a donation type" />
+                                        </SelectTrigger>
+                                        </FormControl>
+                                        <SelectContent>
+                                        {donationTypes.map((type) => (
+                                            <SelectItem key={type} value={type}>
+                                            {type.replace(/_/g, ' ')}
+                                            </SelectItem>
+                                        ))}
+                                        </SelectContent>
+                                    </Select>
+                                    <FormMessage />
+                                    </FormItem>
+                                )}
+                            />
+                            <FormField
+                                control={form.control}
                                 name="bloodType"
                                 render={({ field }) => (
                                     <FormItem>
                                         <FormLabel>Blood Type</FormLabel>
-                                        <Select onValueChange={field.onChange} defaultValue={field.value} disabled={recipient.role === 'Donor'}>
+                                        <Select onValueChange={field.onChange} defaultValue={field.value} disabled={recipient.role === 'Donor' || recipient.role === 'Individual'}>
                                             <FormControl>
                                                 <SelectTrigger>
                                                     <SelectValue placeholder="Select blood type" />
                                                 </SelectTrigger>
                                             </FormControl>
                                             <SelectContent>
-                                                {recipient.role === 'Donor' && recipient.bloodType ? (
+                                                {(recipient.role === 'Donor' || recipient.role === 'Individual') && recipient.bloodType ? (
                                                     <SelectItem value={recipient.bloodType}>{recipient.bloodType}</SelectItem>
                                                 ) : (
                                                     recipient.availableBloodTypes?.map((type) => (
@@ -231,32 +316,35 @@ function DirectRequestDialog({
     );
 }
 
-function EmergencyPollDialog({user, onSent}: {user: User, onSent: () => void}) {
+function EmergencyPollDialog({onSent, user}: {onSent: () => void, user: User | null}) {
     const { toast } = useToast();
     const [open, setOpen] = React.useState(false);
-    const [message, setMessage] = React.useState('');
-    const [isSubmitting, setIsSubmitting] = React.useState(false);
+    
+    const form = useForm<EmergencyPollFormValues>({
+        resolver: zodResolver(emergencyPollSchema),
+        defaultValues: {
+            message: '',
+        }
+    });
 
-    const handleSend = async () => {
-        if (!message) {
-            toast({ variant: 'destructive', title: 'Error', description: 'Emergency message cannot be empty.' });
+    const onSubmit: SubmitHandler<EmergencyPollFormValues> = async (data) => {
+        if (!user) {
+            toast({ variant: 'destructive', title: 'Error', description: 'Could not find user. Please log in again.' });
             return;
         }
-        setIsSubmitting(true);
+
         try {
-            const result = await createEmergencyPoll(user, message);
+            const result = await createEmergencyPoll(user, data.message);
             if (result.success) {
                 toast({ title: 'Emergency Poll Sent!', description: 'An urgent broadcast has been sent to all users.' });
                 onSent();
                 setOpen(false);
-                setMessage('');
+                form.reset();
             } else {
                 throw new Error(result.message);
             }
         } catch (e: any) {
             toast({ variant: 'destructive', title: 'Error', description: e.message || 'Failed to send emergency poll.' });
-        } finally {
-            setIsSubmitting(false);
         }
     };
     
@@ -268,26 +356,28 @@ function EmergencyPollDialog({user, onSent}: {user: User, onSent: () => void}) {
             </Button>
             </DialogTrigger>
             <DialogContent>
-            <DialogHeader>
-                <DialogTitle>Create Emergency Poll</DialogTitle>
-                <DialogDescription>
-                This will send an urgent notification to all users. Use only in critical situations.
-                </DialogDescription>
-            </DialogHeader>
-            <div className="py-4">
-                <Textarea 
-                    placeholder="Describe the emergency... (e.g., Critical need for O- blood due to an accident at Main St.)"
-                    value={message}
-                    onChange={(e) => setMessage(e.target.value)} 
-                />
-            </div>
-            <DialogFooter>
-                <Button type="button" variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>
-                <Button variant="destructive" onClick={handleSend} disabled={isSubmitting || !message}>
-                    {isSubmitting && <LoaderCircle className="mr-2 h-4 w-4 animate-spin" />}
-                    Send Urgent Broadcast
-                </Button>
-            </DialogFooter>
+                <Form {...form}>
+                    <form onSubmit={form.handleSubmit(onSubmit)}>
+                        <DialogHeader>
+                            <DialogTitle>Create Emergency Poll</DialogTitle>
+                            <DialogDescription>
+                            This will send an urgent notification to all users. Use only in critical situations.
+                            </DialogDescription>
+                        </DialogHeader>
+                        <div className="py-4 space-y-4">
+                            <FormField control={form.control} name="message" render={({ field }) => (
+                                <FormItem><FormLabel>Message</FormLabel><FormControl><Textarea placeholder="Describe the emergency... (e.g., Due to a multi-car accident at Main St.)" {...field} /></FormControl><FormMessage /></FormItem>
+                            )} />
+                        </div>
+                        <DialogFooter>
+                            <Button type="button" variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>
+                            <Button variant="destructive" type="submit" disabled={form.formState.isSubmitting}>
+                                {form.formState.isSubmitting && <LoaderCircle className="mr-2 h-4 w-4 animate-spin" />}
+                                Send Urgent Broadcast
+                            </Button>
+                        </DialogFooter>
+                    </form>
+                </Form>
             </DialogContent>
         </Dialog>
     );
@@ -302,6 +392,11 @@ function RequesterPageContent() {
   const [potentialDonors, setPotentialDonors] = React.useState<User[]>([]);
   const [user, setUser] = React.useState<User | null>(null);
   const [loading, setLoading] = React.useState(true);
+  const [filters, setFilters] = React.useState({ city: '', state: '', bloodType: '', role: '', donationType: '' });
+  const [appliedFilters, setAppliedFilters] = React.useState({ city: '', state: '', bloodType: '', role: '', donationType: '' });
+  const [incomingRequests, setIncomingRequests] = React.useState<Notification[]>([]);
+  const [myRequestResponses, setMyRequestResponses] = React.useState<Notification[]>([]);
+  const [responding, setResponding] = React.useState<string | null>(null);
 
 
   const form = useForm<RequestFormValues>({
@@ -309,6 +404,8 @@ function RequesterPageContent() {
     defaultValues: {
       units: 1,
       urgency: 'Medium',
+      donationType: 'whole_blood',
+      bloodType: '',
     },
   });
 
@@ -326,34 +423,43 @@ function RequesterPageContent() {
       }
   });
 
-  const fetchRequests = React.useCallback(async (email: string) => {
-    const requests = await getBloodRequestsForUser(email);
-    setRequesterRequests(requests);
-  }, []);
+  const handleSave = useCallback(async () => {
+    setLoading(true);
+    const email = sessionStorage.getItem('currentUserEmail');
+    if (!email) {
+      setLoading(false);
+      return;
+    }
+    try {
+        const [userData, requests, donors, notifications] = await Promise.all([
+            getUser(email),
+            getBloodRequestsForUser(email),
+            getPotentialDonors(),
+            getNotificationsForUser(email),
+        ]);
+        
+        if (userData) {
+            setUser(userData);
+            profileForm.reset(userData);
+        }
+        setRequesterRequests(requests);
+        setPotentialDonors(donors);
+        // Direct requests TO me + emergency broadcasts
+        setIncomingRequests(notifications.filter(n => n.type === 'request' || n.type === 'emergency'));
+        // Responses for requests I made
+        setMyRequestResponses(notifications.filter(n => ['response', 'decline'].includes(n.type)));
 
-  const fetchDonors = React.useCallback(async () => {
-    const donors = await getPotentialDonors();
-    setPotentialDonors(donors);
-  }, []);
+    } catch (error) {
+        toast({ variant: 'destructive', title: 'Error loading data', description: 'Could not load all dashboard data.' });
+        console.error(error);
+    } finally {
+        setLoading(false);
+    }
+  }, [profileForm, toast]);
 
   React.useEffect(() => {
-    const fetchUserAndData = async () => {
-      setLoading(true);
-      const email = sessionStorage.getItem('currentUserEmail');
-      if (email) {
-        const userData = await getUser(email);
-        if (userData) {
-          setUser(userData);
-          profileForm.reset(userData);
-          await fetchRequests(email);
-          await fetchDonors();
-        }
-      }
-      setLoading(false);
-    };
-
-    fetchUserAndData();
-  }, [profileForm, fetchRequests, fetchDonors]);
+    handleSave();
+  }, [handleSave]);
 
   const onSubmit: SubmitHandler<RequestFormValues> = async (data) => {
     if (!user?.email) {
@@ -367,7 +473,7 @@ function RequesterPageContent() {
         description: `Your request for ${data.units} unit(s) of ${data.bloodType} blood has been broadcast.`,
         });
         form.reset();
-        await fetchRequests(user.email);
+        handleSave();
     } catch (e) {
         toast({ variant: 'destructive', title: 'Error', description: 'Failed to submit request.'});
     }
@@ -384,30 +490,89 @@ function RequesterPageContent() {
             title: 'Profile Updated!',
             description: 'Your details have been successfully saved.',
         });
+        handleSave();
     } catch(e) {
         toast({ variant: 'destructive', title: 'Error', description: 'Failed to update profile.'});
     }
   }
 
-  const handleDirectRequestSuccess = () => {
-      if (user?.email) {
-          fetchRequests(user.email);
-      }
-  };
-
+  const handleAcceptRequest = async (notification: Notification) => {
+    if (!user || !notification.requestId) return;
+    setResponding(notification._id);
+    try {
+        const result = await respondToRequest(notification._id, notification.requestId, user, notification.requesterEmail);
+        if (result.success) {
+            toast({ title: "Request Accepted", description: "The requester has been notified." });
+            handleSave();
+        } else {
+            throw new Error(result.message);
+        }
+    } catch(e: any) {
+        toast({ variant: 'destructive', title: "Error", description: e.message || "Failed to accept request." });
+    } finally {
+        setResponding(null);
+    }
+  }
+  
+  const handleDeclineRequest = async (notification: Notification, reason: string) => {
+    if (!user || !notification.requestId) return;
+    setResponding(notification._id);
+     try {
+        const result = await declineRequest(notification._id, notification.requestId, user, notification.requesterEmail, reason);
+        if (result.success) {
+            toast({ title: "Request Declined", description: result.message });
+            handleSave();
+        } else {
+            throw new Error(result.message);
+        }
+    } catch(e: any) {
+        toast({ variant: 'destructive', title: "Error", description: e.message || "Failed to decline request." });
+    } finally {
+        setResponding(null);
+    }
+  }
 
   const handleCancelRequest = async (requestId: string) => {
     try {
         await cancelBloodRequest(requestId);
-        setRequesterRequests((prevRequests) => prevRequests.filter(req => req.id !== requestId));
         toast({
             title: 'Request Cancelled',
             description: `Your request has been successfully cancelled.`,
         });
+        handleSave();
     } catch (e) {
         toast({ variant: 'destructive', title: 'Error', description: 'Failed to cancel request.'});
     }
   }
+  
+  const handleFilterChange = (filterType: keyof typeof filters, value: string) => {
+    setFilters(prev => ({ ...prev, [filterType]: value }));
+  };
+  
+  const handleApplyFilters = () => {
+    setAppliedFilters(filters);
+  };
+
+  const handleClearFilters = () => {
+    const cleared = { city: '', state: '', bloodType: '', role: '', donationType: '' };
+    setFilters(cleared);
+    setAppliedFilters(cleared);
+  };
+
+  const filteredDonors = React.useMemo(() => {
+    return potentialDonors.filter(donor => {
+        if (donor.email === user?.email) return false;
+        
+        const normalize = (str: string | undefined) => (str || '').toLowerCase().replace(/\s+/g, '');
+        
+        const cityMatch = !appliedFilters.city || normalize(donor.city).includes(normalize(appliedFilters.city));
+        const stateMatch = !appliedFilters.state || normalize(donor.state).includes(normalize(appliedFilters.state));
+        const roleMatch = !appliedFilters.role || donor.role === appliedFilters.role;
+        const bloodTypeMatch = !appliedFilters.bloodType || (donor.bloodType === appliedFilters.bloodType) || (donor.availableBloodTypes && donor.availableBloodTypes.includes(appliedFilters.bloodType));
+        
+        return cityMatch && stateMatch && roleMatch && bloodTypeMatch;
+    });
+  }, [potentialDonors, appliedFilters, user]);
 
   if (loading || !user) {
     return (
@@ -422,11 +587,11 @@ function RequesterPageContent() {
     <>
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
             <h1 className="text-2xl font-bold">Individual Dashboard</h1>
-            <EmergencyPollDialog user={user} onSent={() => { /* maybe refresh some data if needed */ }} />
+            <EmergencyPollDialog user={user} onSent={handleSave} />
         </div>
 
         {view === 'request' && (
-            <div className="grid gap-6 md:grid-cols-2">
+            <div className="grid gap-6">
                 <Card className="shadow-md">
                     <Form {...form}>
                     <form onSubmit={form.handleSubmit(onSubmit)}>
@@ -438,6 +603,30 @@ function RequesterPageContent() {
                         </CardDescription>
                         </CardHeader>
                         <CardContent className="space-y-4">
+                        <FormField
+                            control={form.control}
+                            name="donationType"
+                            render={({ field }) => (
+                            <FormItem>
+                                <FormLabel>Donation Type</FormLabel>
+                                <Select onValueChange={field.onChange} defaultValue={field.value}>
+                                <FormControl>
+                                    <SelectTrigger>
+                                    <SelectValue placeholder="Select a donation type" />
+                                    </SelectTrigger>
+                                </FormControl>
+                                <SelectContent>
+                                    {donationTypes.map((type) => (
+                                    <SelectItem key={type} value={type}>
+                                        {type.replace(/_/g, ' ')}
+                                    </SelectItem>
+                                    ))}
+                                </SelectContent>
+                                </Select>
+                                <FormMessage />
+                            </FormItem>
+                            )}
+                        />
                         <FormField
                             control={form.control}
                             name="bloodType"
@@ -516,115 +705,456 @@ function RequesterPageContent() {
                     <CardDescription>A log of your past blood requests.</CardDescription>
                     </CardHeader>
                     <CardContent>
-                    <Table>
+                    {/* Mobile View: Card List */}
+                    <div className="md:hidden space-y-4">
+                        {requesterRequests.map((request) => (
+                            <Card key={request._id} className="p-4">
+                                <div className="flex justify-between items-start">
+                                    <div>
+                                        <p className="font-bold">Request ID: {request._id.slice(-6)}</p>
+                                        <p className="text-sm text-muted-foreground">{format(new Date(request.date), 'PP')}</p>
+                                    </div>
+                                    <Badge variant={request.status === 'Fulfilled' ? 'default' : 'secondary'} className={cn( request.status === 'Fulfilled' && 'bg-green-600', request.status === 'Pending' && 'bg-yellow-500', request.status === 'In Progress' && 'bg-blue-500' )}>
+                                        {request.status}
+                                    </Badge>
+                                </div>
+                                <div className="mt-4 space-y-2">
+                                    <div className="flex justify-between text-sm">
+                                        <span className="text-muted-foreground">Blood Type:</span>
+                                        <Badge variant="outline" className="text-primary border-primary/50">{request.bloodType}</Badge>
+                                    </div>
+                                     <div className="flex justify-between text-sm">
+                                        <span className="text-muted-foreground">Donation Type:</span>
+                                        <span className="capitalize">{request.donationType.replace(/_/g, ' ')}</span>
+                                    </div>
+                                    <div className="flex justify-between text-sm">
+                                        <span className="text-muted-foreground">Units:</span>
+                                        <span>{request.units}</span>
+                                    </div>
+                                    <div className="flex justify-between text-sm">
+                                        <span className="text-muted-foreground">Urgency:</span>
+                                        <Badge variant="outline" className={cn("dark:!text-black", urgencyColors[request.urgency])}>{request.urgency}</Badge>
+                                    </div>
+                                </div>
+                                {request.status === 'Pending' && (
+                                    <div className="mt-4 text-right">
+                                        <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive" onClick={() => handleCancelRequest(request._id)}>
+                                            <XCircle className="h-4 w-4 mr-1" />
+                                            Cancel
+                                        </Button>
+                                    </div>
+                                )}
+                            </Card>
+                        ))}
+                    </div>
+                    {/* Desktop View: Table */}
+                    <div className="hidden md:block">
+                        <Table>
+                            <TableHeader>
+                            <TableRow>
+                                <TableHead>Date</TableHead>
+                                <TableHead>Donation Type</TableHead>
+                                <TableHead>Blood Type</TableHead>
+                                <TableHead>Units</TableHead>
+                                <TableHead>Urgency</TableHead>
+                                <TableHead>Status</TableHead>
+                                <TableHead className="text-right">Actions</TableHead>
+                            </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                            {requesterRequests.map((request) => (
+                                <TableRow key={request._id}>
+                                <TableCell>{format(new Date(request.date), 'PP')}</TableCell>
+                                 <TableCell>
+                                     <span className="capitalize">{request.donationType.replace(/_/g, ' ')}</span>
+                                 </TableCell>
+                                <TableCell>
+                                    <Badge variant="outline" className="text-primary border-primary/50">{request.bloodType}</Badge>
+                                </TableCell>
+                                <TableCell>{request.units}</TableCell>
+                                <TableCell>
+                                    <Badge variant="outline" className={cn("dark:!text-black", urgencyColors[request.urgency])}>{request.urgency}</Badge>
+                                </TableCell>
+                                <TableCell>
+                                    <Badge variant={request.status === 'Fulfilled' ? 'default' : 'secondary'}
+                                        className={cn(
+                                            request.status === 'Fulfilled' && 'bg-green-600',
+                                            request.status === 'Pending' && 'bg-yellow-500',
+                                            request.status === 'In Progress' && 'bg-blue-500'
+                                        )}
+                                    >
+                                        {request.status}
+                                    </Badge>
+                                </TableCell>
+                                <TableCell className="text-right">
+                                    {request.status === 'Pending' && (
+                                        <Button variant="ghost" size="icon" className="text-destructive hover:text-destructive" onClick={() => handleCancelRequest(request._id)}>
+                                            <XCircle className="h-4 w-4" />
+                                            <span className="sr-only">Cancel</span>
+                                        </Button>
+                                    )}
+                                </TableCell>
+                                </TableRow>
+                            ))}
+                            </TableBody>
+                        </Table>
+                    </div>
+                    </CardContent>
+                </Card>
+            </div>
+        )}
+
+        {view === 'incoming-requests' && (
+             <div className="space-y-6">
+                <Card className="border-destructive">
+                    <CardHeader>
+                        <CardTitle className="flex items-center gap-2 text-destructive">
+                            <Siren />
+                            Emergency Broadcasts
+                        </CardTitle>
+                        <CardDescription>
+                            Urgent, high-priority requests from across the network.
+                        </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                        {incomingRequests.filter(req => req.type === 'emergency').length > 0 ? (
+                            <div className="space-y-4">
+                                {incomingRequests.filter(req => req.type === 'emergency').map(req => (
+                                    <Card key={req._id} className="bg-destructive/10 p-4">
+                                        <div className="flex justify-between items-start mb-2">
+                                            <div>
+                                                <p className="font-semibold">{req.requesterName}</p>
+                                                <p className="text-xs text-muted-foreground">{formatDistanceToNow(new Date(req.date), { addSuffix: true })}</p>
+                                            </div>
+                                            <Badge variant="destructive">{req.urgency}</Badge>
+                                        </div>
+                                        <p className="text-sm">{req.message}</p>
+                                    </Card>
+                                ))}
+                            </div>
+                        ) : (
+                            <div className="text-center h-24 flex items-center justify-center">
+                                <p className="text-muted-foreground">No current emergency broadcasts.</p>
+                            </div>
+                        )}
+                    </CardContent>
+                </Card>
+                <Card>
+                    <CardHeader>
+                    <CardTitle>Incoming Requests for You</CardTitle>
+                    <CardDescription>
+                        Direct requests sent to you from others in need.
+                    </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                    {/* Mobile view */}
+                    <div className="space-y-4 md:hidden">
+                        {incomingRequests.filter(n => n.type === 'request').length > 0 ? incomingRequests.filter(n => n.type === 'request').map(req => (
+                        <Card key={req._id} className="p-4">
+                            <div className="flex justify-between items-start mb-4">
+                                <div>
+                                <p className="font-semibold">{req.requesterName}</p>
+                                <p className="text-xs text-muted-foreground">{formatDistanceToNow(new Date(req.date), { addSuffix: true })}</p>
+                                </div>
+                                <Badge variant="outline" className={cn('dark:!text-black', urgencyColors[req.urgency])}>{req.urgency}</Badge>
+                            </div>
+                            <div className="space-y-2 text-sm mb-4">
+                            <div className="flex justify-between">
+                                <span className="text-muted-foreground">Blood Type:</span>
+                                <Badge variant="outline">{req.bloodType}</Badge>
+                            </div>
+                            <div className="flex justify-between">
+                                <span className="text-muted-foreground">Contact:</span>
+                                <span>{req.requesterMobileNumber || req.requesterEmail}</span>
+                            </div>
+                            </div>
+                            {req.requestId && (
+                                <div className="flex justify-end gap-2">
+                                    <Button variant="default" size="sm" onClick={() => handleAcceptRequest(req)} disabled={!!responding}>
+                                        {responding === req._id ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <><Check className="mr-1 h-4 w-4" /> Accept</>}
+                                    </Button>
+                                    <DeclineRequestDialog notification={req} onConfirm={(reason) => handleDeclineRequest(req, reason)} />
+                                </div>
+                            )}
+                        </Card>
+                        )) : (
+                        <div className="text-center h-24 flex items-center justify-center">
+                            <p className="text-muted-foreground">No new requests.</p>
+                        </div>
+                        )}
+                    </div>
+
+                    {/* Desktop view */}
+                    <div className="hidden md:block">
+                        <Table>
                         <TableHeader>
-                        <TableRow>
+                            <TableRow>
                             <TableHead>Date</TableHead>
-                            <TableHead>Type</TableHead>
-                            <TableHead>Units</TableHead>
+                            <TableHead>Requester</TableHead>
+                            <TableHead>Blood Type</TableHead>
                             <TableHead>Urgency</TableHead>
-                            <TableHead>Status</TableHead>
                             <TableHead className="text-right">Actions</TableHead>
-                        </TableRow>
+                            </TableRow>
                         </TableHeader>
                         <TableBody>
-                        {requesterRequests.map((request) => (
-                            <TableRow key={request.id}>
-                            <TableCell>{format(new Date(request.date), 'PP')}</TableCell>
-                            <TableCell>
-                                <Badge variant="outline" className="text-primary border-primary/50">{request.bloodType}</Badge>
-                            </TableCell>
-                            <TableCell>{request.units}</TableCell>
-                            <TableCell>
-                                <Badge variant="outline" className={cn("dark:!text-black", urgencyColors[request.urgency])}>{request.urgency}</Badge>
-                            </TableCell>
-                            <TableCell>
-                                <Badge variant={request.status === 'Fulfilled' ? 'default' : 'secondary'}
-                                    className={cn(
-                                        request.status === 'Fulfilled' && 'bg-green-600',
-                                        request.status === 'Pending' && 'bg-yellow-500',
-                                        request.status === 'In Progress' && 'bg-blue-500'
+                            {incomingRequests.filter(n => n.type === 'request').length > 0 ? (
+                            incomingRequests.filter(n => n.type === 'request').map((req) => (
+                                <TableRow key={req._id}>
+                                <TableCell>{formatDistanceToNow(new Date(req.date), { addSuffix: true })}</TableCell>
+                                <TableCell>
+                                    <div className="font-medium">{req.requesterName}</div>
+                                    <div className="text-xs text-muted-foreground">{req.requesterEmail}</div>
+                                </TableCell>
+                                <TableCell><Badge variant="outline">{req.bloodType}</Badge></TableCell>
+                                <TableCell><Badge variant="outline" className={cn('dark:!text-black', urgencyColors[req.urgency])}>{req.urgency}</Badge></TableCell>
+                                <TableCell className="flex justify-end text-right space-x-2">
+                                    {req.requestId && (
+                                        <>
+                                            <Button variant="default" size="sm" onClick={() => handleAcceptRequest(req)} disabled={!!responding}>
+                                                {responding === req._id ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <><Check className="mr-1 h-4 w-4" /> Accept</>}
+                                            </Button>
+                                            <DeclineRequestDialog notification={req} onConfirm={(reason) => handleDeclineRequest(req, reason)} />
+                                        </>
                                     )}
-                                >
-                                    {request.status}
-                                </Badge>
-                            </TableCell>
-                            <TableCell className="text-right">
-                                {request.status === 'Pending' && (
-                                     <Button variant="ghost" size="icon" className="text-destructive hover:text-destructive" onClick={() => handleCancelRequest(request.id)}>
-                                        <XCircle className="h-4 w-4" />
-                                        <span className="sr-only">Cancel</span>
-                                    </Button>
-                                )}
-                            </TableCell>
+                                </TableCell>
+                                </TableRow>
+                            ))
+                            ) : (
+                            <TableRow>
+                                <TableCell colSpan={5} className="text-center h-24">No new requests.</TableCell>
                             </TableRow>
-                        ))}
+                            )}
                         </TableBody>
-                    </Table>
+                        </Table>
+                    </div>
+                    </CardContent>
+                </Card>
+
+                <Card>
+                    <CardHeader>
+                    <CardTitle>My Sent Requests - Status</CardTitle>
+                    <CardDescription>
+                        Status updates on blood requests you have sent.
+                    </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                    {/* Mobile view */}
+                    <div className="space-y-4 md:hidden">
+                        {myRequestResponses.length > 0 ? myRequestResponses.map(req => (
+                        <Card key={req._id} className="p-4">
+                            <div className="flex justify-between items-start mb-4">
+                                <div>
+                                <p className="font-semibold">{req.requesterName}</p>
+                                <p className="text-xs text-muted-foreground">{formatDistanceToNow(new Date(req.date), { addSuffix: true })}</p>
+                                </div>
+                                <Badge variant="outline" className={cn(
+                                    req.type === 'response' && 'text-green-500 border-green-500',
+                                    req.type === 'decline' && 'text-red-500 border-red-500',
+                                )}>{req.type}</Badge>
+                            </div>
+                            <p className='text-sm'>{req.message}</p>
+                        </Card>
+                        )) : (
+                        <div className="text-center h-24 flex items-center justify-center">
+                            <p className="text-muted-foreground">No new responses or notifications.</p>
+                        </div>
+                        )}
+                    </div>
+
+                    {/* Desktop view */}
+                    <div className="hidden md:block">
+                        <Table>
+                        <TableHeader>
+                            <TableRow>
+                            <TableHead>Date</TableHead>
+                            <TableHead>From</TableHead>
+                            <TableHead>Message</TableHead>
+                            <TableHead>Type</TableHead>
+                            </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                            {myRequestResponses.length > 0 ? (
+                            myRequestResponses.map((req) => (
+                                <TableRow key={req._id}>
+                                <TableCell>{formatDistanceToNow(new Date(req.date), { addSuffix: true })}</TableCell>
+                                <TableCell>
+                                    <div className="font-medium">{req.requesterName}</div>
+                                    <div className="text-xs text-muted-foreground">{req.requesterEmail}</div>
+                                </TableCell>
+                                <TableCell><p className="text-sm">{req.message}</p></TableCell>
+                                <TableCell>
+                                    <Badge variant="outline" className={cn(
+                                        req.type === 'response' && 'text-green-500 border-green-500',
+                                        req.type === 'decline' && 'text-red-500 border-red-500',
+                                    )}>
+                                    {req.type}
+                                    </Badge>
+                                </TableCell>
+                                </TableRow>
+                            ))
+                            ) : (
+                            <TableRow>
+                                <TableCell colSpan={4} className="text-center h-24">No new responses or notifications.</TableCell>
+                            </TableRow>
+                            )}
+                        </TableBody>
+                        </Table>
+                    </div>
                     </CardContent>
                 </Card>
             </div>
         )}
 
         {view === 'donors' && (
-             <Card>
+            <Card className="w-full">
                 <CardHeader>
                     <CardTitle>Find Donors &amp; Facilities</CardTitle>
                     <CardDescription>List of available donors, hospitals, and blood banks.</CardDescription>
                 </CardHeader>
                 <CardContent>
-                     <Table>
-                        <TableHeader>
-                            <TableRow>
-                                <TableHead>Name</TableHead>
-                                <TableHead>Role</TableHead>
-                                <TableHead>Location</TableHead>
-                                <TableHead>Available Blood Types</TableHead>
-                                <TableHead className="text-right">Action</TableHead>
-                            </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                            {potentialDonors.length > 0 ? (
-                                potentialDonors.map(donor => (
-                                    <TableRow key={donor.email}>
-                                        <TableCell>{donor.name}</TableCell>
-                                        <TableCell>
-                                          <Badge variant={donor.role === 'Donor' ? 'secondary' : 'outline'}>{donor.role}</Badge>
-                                        </TableCell>
-                                        <TableCell>{donor.city}, {donor.state}</TableCell>
-                                        <TableCell className="flex flex-wrap gap-1">
-                                            {donor.role === 'Donor' && donor.bloodType ? <Badge variant="outline" className="text-primary border-primary/50">{donor.bloodType}</Badge> 
-                                            : donor.availableBloodTypes && donor.availableBloodTypes.length > 0 ? (
-                                                donor.availableBloodTypes.map(type => <Badge key={type} variant="outline">{type}</Badge>)
+                    <div className="mb-6 p-4 border rounded-lg bg-card">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                            <Input placeholder="City" value={filters.city} onChange={(e) => handleFilterChange('city', e.target.value)} />
+                            <Input placeholder="State" value={filters.state} onChange={(e) => handleFilterChange('state', e.target.value)} />
+                             <Select value={filters.bloodType} onValueChange={(value) => handleFilterChange('bloodType', value === 'all' ? '' : value)}>
+                                <SelectTrigger><SelectValue placeholder="Blood Type" /></SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="all">All Blood Types</SelectItem>
+                                    {bloodTypes.map(type => <SelectItem key={type} value={type}>{type}</SelectItem>)}
+                                </SelectContent>
+                            </Select>
+                            <Select value={filters.donationType} onValueChange={(value) => handleFilterChange('donationType', value === 'all' ? '' : value)}>
+                                <SelectTrigger><SelectValue placeholder="Donation Type" /></SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="all">All Donation Types</SelectItem>
+                                    {donationTypes.map(type => <SelectItem key={type} value={type}>{type.replace(/_/g, ' ')}</SelectItem>)}
+                                </SelectContent>
+                            </Select>
+                            <Select value={filters.role} onValueChange={(value) => handleFilterChange('role', value === 'all' ? '' : value)}>
+                                <SelectTrigger><SelectValue placeholder="Role" /></SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="all">All Roles</SelectItem>
+                                    <SelectItem value="Donor">Donor</SelectItem>
+                                    <SelectItem value="Individual">Individual</SelectItem>
+                                    <SelectItem value="Hospital">Hospital</SelectItem>
+                                    <SelectItem value="Blood Bank">Blood Bank</SelectItem>
+                                </SelectContent>
+                            </Select>
+                        </div>
+                        <div className="flex justify-end gap-2 mt-4">
+                            <Button onClick={handleApplyFilters}><Search className="mr-2 h-4 w-4" /> Apply Filters</Button>
+                            <Button variant="ghost" onClick={handleClearFilters}>Clear Filters</Button>
+                        </div>
+                    </div>
+                    {/* Mobile View: Card List */}
+                    <div className="md:hidden space-y-4">
+                        {filteredDonors.length > 0 ? (
+                            filteredDonors.map(donor => (
+                                <Card key={donor._id} className="p-4">
+                                    <div className="flex justify-between items-start">
+                                        <div>
+                                            <p className="font-bold">{donor.name}</p>
+                                            <p className="text-sm text-muted-foreground">{donor.city}, {donor.state}</p>
+                                            <div className="mt-2 space-y-1 text-xs text-muted-foreground">
+                                                <p className="flex items-center gap-1"><Mail className="h-3 w-3" /> {donor.email}</p>
+                                                <p className="flex items-center gap-1"><Phone className="h-3 w-3" /> {donor.mobileNumber}</p>
+                                            </div>
+                                        </div>
+                                        <Badge variant={donor.role === 'Donor' ? 'secondary' : 'outline'}>{donor.role}</Badge>
+                                    </div>
+                                    <div className="flex items-center justify-between mt-4">
+                                        <div className="flex flex-col text-sm space-y-1">
+                                            {(donor.role === 'Donor' || donor.role === 'Individual') && donor.bloodType ? (
+                                                <Badge variant="outline" className="text-primary border-primary/50">{donor.bloodType}</Badge>
+                                            ) : (donor.role === 'Hospital' || donor.role === 'Blood Bank') && donor.inventorySummary ? (
+                                              <>
+                                                <p><span className="font-semibold">WB:</span> {donor.inventorySummary.whole_blood} units</p>
+                                                <p><span className="font-semibold">Plasma:</span> {donor.inventorySummary.plasma} units</p>
+                                                <p><span className="font-semibold">RBC:</span> {donor.inventorySummary.red_blood_cells} units</p>
+                                                <div className="flex flex-wrap gap-1 pt-2">
+                                                    {donor.availableBloodTypes?.map(type => <Badge key={type} variant="outline">{type}</Badge>)}
+                                                </div>
+                                              </>
                                             ) : (
                                                 <span className="text-xs text-muted-foreground">N/A</span>
                                             )}
-                                        </TableCell>
-                                        <TableCell className="text-right">
-                                            <DirectRequestDialog recipient={donor} requester={user} onSuccess={handleDirectRequestSuccess} />
-                                        </TableCell>
-                                    </TableRow>
-                                ))
-                            ) : (
+                                        </div>
+                                        <DirectRequestDialog recipient={donor} requester={user} onSuccess={handleSave} />
+                                    </div>
+                                </Card>
+                            ))
+                        ) : (
+                             <div className="text-center h-24 flex items-center justify-center">
+                                <p className="text-muted-foreground">No available donors or facilities found.</p>
+                            </div>
+                        )}
+                    </div>
+                    {/* Desktop View: Table */}
+                    <div className="hidden md:block">
+                        <Table>
+                            <TableHeader>
                                 <TableRow>
-                                    <TableCell colSpan={5} className="text-center h-24">No available donors or facilities found.</TableCell>
+                                    <TableHead>Name & Contact</TableHead>
+                                    <TableHead>Role</TableHead>
+                                    <TableHead>Location</TableHead>
+                                    <TableHead>Inventory / Blood Type</TableHead>
+                                    <TableHead className="text-right">Action</TableHead>
                                 </TableRow>
-                            )}
-                        </TableBody>
-                     </Table>
+                            </TableHeader>
+                            <TableBody>
+                                {filteredDonors.length > 0 ? (
+                                    filteredDonors.map(donor => (
+                                        <TableRow key={donor._id}>
+                                            <TableCell>
+                                                <div className="font-medium">{donor.name}</div>
+                                                <div className="text-xs text-muted-foreground flex items-center gap-1"><Mail className="h-3 w-3" />{donor.email}</div>
+                                                <div className="text-xs text-muted-foreground flex items-center gap-1"><Phone className="h-3 w-3" />{donor.mobileNumber}</div>
+                                            </TableCell>
+                                            <TableCell>
+                                            <Badge variant={donor.role === 'Donor' ? 'secondary' : 'outline'}>{donor.role}</Badge>
+                                            </TableCell>
+                                            <TableCell>{donor.city}, {donor.state}</TableCell>
+                                            <TableCell className="text-xs">
+                                                {(donor.role === 'Donor' || donor.role === 'Individual') && donor.bloodType ? <Badge variant="outline" className="text-primary border-primary/50">{donor.bloodType}</Badge> 
+                                                : (donor.role === 'Hospital' || donor.role === 'Blood Bank') && donor.inventorySummary ? (
+                                                    <div className="flex flex-col">
+                                                        <div className="flex flex-wrap gap-1 pb-1">
+                                                            {donor.availableBloodTypes?.map(type => <Badge key={type} variant="outline" className="text-xs">{type}</Badge>)}
+                                                        </div>
+                                                        <span>Whole Blood: {donor.inventorySummary.whole_blood} units</span>
+                                                        <span>Plasma: {donor.inventorySummary.plasma} units</span>
+                                                        <span>Red Blood Cells: {donor.inventorySummary.red_blood_cells} units</span>
+                                                    </div>
+                                                ) : (
+                                                    <span className="text-muted-foreground">N/A</span>
+                                                )}
+                                            </TableCell>
+                                            <TableCell className="text-right">
+                                                <DirectRequestDialog recipient={donor} requester={user} onSuccess={handleSave} />
+                                            </TableCell>
+                                        </TableRow>
+                                    ))
+                                ) : (
+                                    <TableRow>
+                                        <TableCell colSpan={5} className="h-24 text-center">No available donors or facilities found.</TableCell>
+                                    </TableRow>
+                                )}
+                            </TableBody>
+                        </Table>
+                    </div>
                 </CardContent>
             </Card>
         )}
 
         {view === 'profile' && (
-            <Card>
+            <Card className="w-full">
                 <Form {...profileForm}>
                     <form onSubmit={profileForm.handleSubmit(onProfileSubmit)}>
                         <CardHeader>
                             <CardTitle>My Profile</CardTitle>
                             <CardDescription>Update your personal information.</CardDescription>
                         </CardHeader>
-                        <CardContent className="space-y-4">
+                        <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
                             <FormField control={profileForm.control} name="name" render={({field}) => (
                                 <FormItem><FormLabel>Full Name</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage/></FormItem>
                             )} />
@@ -634,17 +1164,15 @@ function RequesterPageContent() {
                             <FormField control={profileForm.control} name="mobileNumber" render={({field}) => (
                                 <FormItem><FormLabel>Contact Number</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage/></FormItem>
                             )} />
-                            <FormField control={profileForm.control} name="address" render={({field}) => (
-                                <FormItem><FormLabel>Address</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage/></FormItem>
-                            )}/>
-                            <FormField control={profileForm.control} name="bloodType" render={({field}) => (
+                             <FormField control={profileForm.control} name="bloodType" render={({field}) => (
                                 <FormItem><FormLabel>Blood Type</FormLabel><FormControl><Input {...field} readOnly /></FormControl><FormMessage/></FormItem>
                             )}/>
-                             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                                <FormField control={profileForm.control} name="city" render={({ field }) => (<FormItem><FormLabel>City</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>)} />
-                                <FormField control={profileForm.control} name="state" render={({ field }) => (<FormItem><FormLabel>State</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>)} />
-                                <FormField control={profileForm.control} name="country" render={({ field }) => (<FormItem><FormLabel>Country</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>)} />
-                            </div>
+                            <FormField control={profileForm.control} name="address" render={({field}) => (
+                                <FormItem className="md:col-span-2"><FormLabel>Address</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage/></FormItem>
+                            )}/>
+                            <FormField control={profileForm.control} name="city" render={({ field }) => (<FormItem><FormLabel>City</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>)} />
+                            <FormField control={profileForm.control} name="state" render={({ field }) => (<FormItem><FormLabel>State</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>)} />
+                            <FormField control={profileForm.control} name="country" render={({ field }) => (<FormItem><FormLabel>Country</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>)} />
                         </CardContent>
                         <CardFooter>
                             <Button type="submit" disabled={profileForm.formState.isSubmitting}>
@@ -668,3 +1196,5 @@ export default function RequesterPage() {
         </Suspense>
     )
 }
+
+    

@@ -1,3 +1,4 @@
+
 'use client';
 
 import * as React from 'react';
@@ -10,7 +11,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
+import { Button, buttonVariants } from '@/components/ui/button';
 import {
   Card,
   CardContent,
@@ -159,7 +160,12 @@ function UserActions({ user, onAction }: { user: User; onAction: () => void }) {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction variant="destructive" onClick={handleDelete}>Delete</AlertDialogAction>
+            <AlertDialogAction
+              className={cn(buttonVariants({ variant: 'destructive' }))}
+              onClick={handleDelete}
+            >
+              Delete
+            </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
@@ -200,39 +206,70 @@ function UserManagementContent() {
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Name</TableHead>
-              <TableHead>Email</TableHead>
-              <TableHead>Role</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>
-                <span className="sr-only">Actions</span>
-              </TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {users.map((user) => (
-              <TableRow key={user.email}>
-                <TableCell className="font-medium">{user.name}</TableCell>
-                <TableCell>{user.email}</TableCell>
-                <TableCell>{user.role}</TableCell>
-                <TableCell>
+        {/* Mobile View */}
+        <div className="space-y-4 md:hidden">
+          {users.length > 0 ? (
+            users.map((user) => (
+              <Card key={user.email} className="p-4">
+                <div className="flex justify-between items-start mb-4">
+                  <div>
+                    <p className="font-semibold">{user.name}</p>
+                    <p className="text-sm text-muted-foreground">{user.email}</p>
+                  </div>
+                  <UserActions user={user} onAction={fetchUsers} />
+                </div>
+                <div className="flex items-center justify-between text-sm">
+                  <Badge variant="outline">{user.role}</Badge>
                   <Badge
                     variant={user.status === 'banned' ? 'destructive' : 'default'}
                     className={cn(user.status === 'active' && 'bg-green-500')}
                   >
                     {user.status}
                   </Badge>
-                </TableCell>
-                <TableCell className="text-right">
-                  <UserActions user={user} onAction={fetchUsers} />
-                </TableCell>
+                </div>
+              </Card>
+            ))
+          ) : (
+            <div className="text-center py-10 text-muted-foreground">No users found.</div>
+          )}
+        </div>
+
+        {/* Desktop View */}
+        <div className="hidden md:block">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Name</TableHead>
+                <TableHead>Email</TableHead>
+                <TableHead>Role</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>
+                  <span className="sr-only">Actions</span>
+                </TableHead>
               </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+            </TableHeader>
+            <TableBody>
+              {users.map((user) => (
+                <TableRow key={user.email}>
+                  <TableCell className="font-medium">{user.name}</TableCell>
+                  <TableCell>{user.email}</TableCell>
+                  <TableCell>{user.role}</TableCell>
+                  <TableCell>
+                    <Badge
+                      variant={user.status === 'banned' ? 'destructive' : 'default'}
+                      className={cn(user.status === 'active' && 'bg-green-500')}
+                    >
+                      {user.status}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <UserActions user={user} onAction={fetchUsers} />
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
       </CardContent>
     </Card>
   );

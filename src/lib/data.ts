@@ -1,4 +1,4 @@
-import type { BloodUnit, Donation, BloodRequest, Redistribution, BloodType } from './types';
+import type { BloodUnit, Donation, BloodRequest, Redistribution, BloodType, DonationType } from './types';
 
 const today = new Date();
 const addDays = (date: Date, days: number) => {
@@ -8,3 +8,4 @@ const addDays = (date: Date, days: number) => {
 };
 
 export const bloodTypes: BloodType[] = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
+export const donationTypes: DonationType[] = ['whole_blood', 'plasma', 'red_blood_cells'];

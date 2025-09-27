@@ -166,7 +166,7 @@ function DemandForecastingContent() {
               </div>
               <div>
                  <h3 className="font-semibold mb-2">Forecast by Blood Type</h3>
-                 <div className="grid grid-cols-2 gap-4">
+                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                      {result.forecastByBloodType.map(detail => (
                          <Card key={detail.bloodType} className="p-4">
                             <div className="flex justify-between items-start">

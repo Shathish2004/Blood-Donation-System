@@ -53,7 +53,7 @@ export function NotificationBell({ userEmail }: { userEmail: string }) {
     setIsOpen(open);
     if (open && unreadCount > 0) {
       // Mark all as read when popover opens
-      const unreadIds = notifications.filter(n => !n.read).map(n => n.id);
+      const unreadIds = notifications.filter(n => !n.read).map(n => n._id);
       Promise.all(unreadIds.map(id => markNotificationAsRead(id))).then(() => {
         // We can refetch, or just update the state locally for a faster UI response
         setUnreadCount(0);
@@ -90,7 +90,7 @@ export function NotificationBell({ userEmail }: { userEmail: string }) {
                const iconColor = getColor(notification.type);
                return (
               <div
-                key={notification.id}
+                key={notification._id}
                 className={`flex items-start gap-3 p-2 rounded-lg ${
                   !notification.read ? 'bg-accent/50' : 'bg-transparent'
                 }`}

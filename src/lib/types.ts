@@ -1,17 +1,28 @@
 
 
+
+
+
+
+
+
+
+
+
+
 export type BloodType = 'A+' | 'A-' | 'B+' | 'B-' | 'AB+' | 'AB-' | 'O+' | 'O-';
 export type Urgency = 'Low' | 'Medium' | 'High' | 'Critical';
 export type Gender = 'Male' | 'Female' | 'Other' | 'Prefer not to say';
 export type DonationStatus = 'Eligible' | 'Not Eligible' | 'Pending';
-export type RequestStatus = 'Fulfilled' | 'Pending' | 'In Progress' | 'Declined';
+export type RequestStatus = 'Fulfilled' | 'Pending' | 'In Progress' | 'Declined' | 'Matched' | 'Expired';
 export type OfferStatus = 'Available' | 'Claimed' | 'Cancelled';
 export type UserStatus = 'active' | 'banned';
+export type DonationType = 'whole_blood' | 'plasma' | 'red_blood_cells';
 
 // --- Base User & Entity Interfaces ---
 
 interface BaseUser {
-  id: string;
+  _id: string;
   name: string;
   email: string;
   contactInfo: string;
@@ -42,7 +53,7 @@ export interface Individual extends BaseUser {
 }
 
 export interface Hospital {
-  id: string; // Unique Hospital ID
+  _id: string; // Unique Hospital ID
   name: string;
   licenseNumber: string;
   address: string;
@@ -53,7 +64,7 @@ export interface Hospital {
 }
 
 export interface BloodBank {
-  id: string; // Unique Blood Bank ID
+  _id: string; // Unique Blood Bank ID
   name: string;
   licenseNumber: string;
   address: string;
@@ -67,17 +78,22 @@ export interface BloodBank {
 // --- Data Models ---
 
 export type BloodUnit = {
-  id: string;
+  _id: string;
   bloodType: BloodType;
+  donationType: DonationType;
   units: number;
   collectionDate: string; // ISO string
   expirationDate: string; // ISO string
   storageConditions?: string;
   location: string; // This will store the hospital's email
+  locationName?: string;
+  locationEmail?: string;
+  locationMobile?: string;
 };
 
 export type Donation = {
-  id: string; // Unique donation transaction ID
+  _id: string; // Unique donation transaction ID
+  donorEmail: string;
   date: string; // ISO string
   location: string; // Where the donation took place
   recipient: string; // Recipient entity ID (Hospital or Blood Bank)
@@ -86,18 +102,20 @@ export type Donation = {
 };
 
 export type BloodRequest = {
-  id: string;
+  _id: string;
   date: string; // Should be ISO string
   bloodType: BloodType;
+  donationType: DonationType;
   units: number;
   urgency: Urgency;
   status: RequestStatus;
   requester?: string; // ID of the individual or hospital
   responder?: string;
+  emergency?: boolean; // Flag for emergency broadcasts
 };
 
 export type BloodReceived = {
-  id: string;
+  _id:string;
   date: string; // ISO string
   bloodType: BloodType;
   units: number;
@@ -105,7 +123,7 @@ export type BloodReceived = {
 };
 
 export type Redistribution = {
-  id: string;
+  _id: string;
   date: string; // ISO string
   source: string;
   destination: string;
@@ -114,19 +132,21 @@ export type Redistribution = {
 };
 
 export type Transfer = {
-  id: string;
+  _id: string;
   date: string; // ISO string
   source: string;
   destination: string;
   units: number;
   bloodType: BloodType;
+  donationType: DonationType;
 };
 
 export type BloodOffer = {
-    id: string;
+    _id: string;
     creatorEmail: string;
     creatorName: string;
     bloodType: BloodType;
+    donationType: DonationType;
     units: number;
     message: string;
     date: string; // ISO string
@@ -137,8 +157,8 @@ export type BloodOffer = {
 
 
 export type Notification = {
-  id: string;
-  type: 'request' | 'response' | 'decline' | 'info' | 'offer' | 'claim';
+  _id: string;
+  type: 'request' | 'response' | 'decline' | 'info' | 'offer' | 'claim' | 'emergency';
   requestId?: string;
   offerId?: string;
   recipientEmail: string;

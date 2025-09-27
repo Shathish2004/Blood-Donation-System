@@ -1,3 +1,4 @@
+
 'use client';
 import * as React from 'react';
 import { Button } from '@/components/ui/button';
@@ -32,10 +33,17 @@ import {
   PlusCircle,
   Trash2,
   X,
+  Siren,
+  Send,
+  Pencil,
+  Filter,
+  Search,
+  Mail,
+  Phone,
 } from 'lucide-react';
 import { Calendar } from '@/components/ui/calendar';
 import { cn } from '@/lib/utils';
-import { format, formatDistanceToNow } from 'date-fns';
+import { format, formatDistanceToNow, parseISO } from 'date-fns';
 import { useToast } from '@/hooks/use-toast';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -46,7 +54,7 @@ import {
 } from '@/components/ui/tooltip';
 import { ToastAction } from '@/components/ui/toast';
 import { useSearchParams } from 'next/navigation';
-import { Suspense } from 'react';
+import { Suspense, useCallback } from 'react';
 import { useForm, SubmitHandler } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -68,9 +76,13 @@ import {
   declineRequest,
   getDonationHistory,
   addDonationHistory,
+  updateDonationHistory,
   deleteDonationHistory,
+  getPotentialDonors,
+  createDirectBloodRequest,
+  createEmergencyPoll,
 } from '@/app/actions';
-import type { Notification, Urgency, Donation } from '@/lib/types';
+import type { Notification, Urgency, Donation, DonationType, BloodType } from '@/lib/types';
 import {
   Dialog,
   DialogContent,
@@ -81,7 +93,7 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
-import { bloodTypes } from '@/lib/data';
+import { bloodTypes, donationTypes } from '@/lib/data';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
 
 
@@ -105,6 +117,19 @@ const donationSchema = z.object({
 });
 type DonationFormValues = z.infer<typeof donationSchema>;
 
+const directRequestSchema = z.object({
+    bloodType: z.string().nonempty({ message: 'Blood type is required.' }),
+    donationType: z.custom<DonationType>(),
+    units: z.coerce.number().min(1, 'At least 1 unit is required.'),
+    urgency: z.enum(['Low', 'Medium', 'High', 'Critical']),
+});
+type DirectRequestFormValues = z.infer<typeof directRequestSchema>;
+
+const emergencyPollSchema = z.object({
+    message: z.string().min(10, "Please provide a detailed message for the emergency.")
+});
+type EmergencyPollFormValues = z.infer<typeof emergencyPollSchema>;
+
 
 const urgencyColors: Record<Urgency, string> = {
     Low: 'bg-blue-100 text-blue-800 border-blue-200',
@@ -112,6 +137,232 @@ const urgencyColors: Record<Urgency, string> = {
     High: 'bg-orange-100 text-orange-800 border-orange-200',
     Critical: 'bg-red-100 text-red-800 border-red-200',
 };
+
+function DirectRequestDialog({
+    requester,
+    recipient,
+    onSuccess,
+}: {
+    requester: User;
+    recipient: User;
+    onSuccess: () => void;
+}) {
+    const { toast } = useToast();
+    const [open, setOpen] = React.useState(false);
+    const form = useForm<DirectRequestFormValues>({
+        resolver: zodResolver(directRequestSchema),
+        defaultValues: {
+            units: 1,
+            urgency: 'Medium',
+            donationType: 'whole_blood',
+            bloodType: (recipient.role === 'Donor' || recipient.role === 'Individual') ? recipient.bloodType : (recipient.availableBloodTypes && recipient.availableBloodTypes.length > 0 ? recipient.availableBloodTypes[0] : undefined),
+        },
+    });
+
+    const onSubmit: SubmitHandler<DirectRequestFormValues> = async (data) => {
+        try {
+            const result = await createDirectBloodRequest({
+                requester: requester,
+                recipient: recipient,
+                ...data,
+            });
+            if (result.success) {
+                toast({ title: 'Request Sent!', description: result.message });
+                onSuccess();
+                setOpen(false);
+                form.reset();
+            } else {
+                throw new Error(result.message);
+            }
+        } catch (e: any) {
+            toast({ variant: 'destructive', title: 'Error', description: e.message || 'Failed to send direct request.' });
+        }
+    };
+    
+    const isRecipientRequestable = () => {
+        if (recipient.role === 'Donor' || recipient.role === 'Individual') {
+            return !!recipient.bloodType;
+        }
+        if (recipient.role === 'Hospital' || recipient.role === 'Blood Bank') {
+            return recipient.availableBloodTypes && recipient.availableBloodTypes.length > 0;
+        }
+        return false;
+    }
+
+    return (
+        <Dialog open={open} onOpenChange={setOpen}>
+            <DialogTrigger asChild>
+                <Button size="sm" disabled={!isRecipientRequestable()}>
+                    <Send className="mr-2 h-3 w-3" />
+                    Request
+                </Button>
+            </DialogTrigger>
+            <DialogContent>
+                <Form {...form}>
+                    <form onSubmit={form.handleSubmit(onSubmit)}>
+                        <DialogHeader>
+                            <DialogTitle>Send Direct Request to {recipient.name}</DialogTitle>
+                            <DialogDescription>
+                                Specify the details of your blood request.
+                            </DialogDescription>
+                        </DialogHeader>
+                        <div className="py-4 space-y-4">
+                             <FormField
+                                control={form.control}
+                                name="donationType"
+                                render={({ field }) => (
+                                    <FormItem>
+                                    <FormLabel>Donation Type</FormLabel>
+                                    <Select onValueChange={field.onChange} defaultValue={field.value}>
+                                        <FormControl>
+                                        <SelectTrigger>
+                                            <SelectValue placeholder="Select a donation type" />
+                                        </SelectTrigger>
+                                        </FormControl>
+                                        <SelectContent>
+                                        {donationTypes.map((type) => (
+                                            <SelectItem key={type} value={type}>
+                                            {type.replace(/_/g, ' ')}
+                                            </SelectItem>
+                                        ))}
+                                        </SelectContent>
+                                    </Select>
+                                    <FormMessage />
+                                    </FormItem>
+                                )}
+                            />
+                            <FormField
+                                control={form.control}
+                                name="bloodType"
+                                render={({ field }) => (
+                                    <FormItem>
+                                        <FormLabel>Blood Type</FormLabel>
+                                        <Select onValueChange={field.onChange} defaultValue={field.value} disabled={recipient.role === 'Donor' || recipient.role === 'Individual'}>
+                                            <FormControl>
+                                                <SelectTrigger>
+                                                    <SelectValue placeholder="Select blood type" />
+                                                </SelectTrigger>
+                                            </FormControl>
+                                            <SelectContent>
+                                                {(recipient.role === 'Donor' || recipient.role === 'Individual') && recipient.bloodType ? (
+                                                    <SelectItem value={recipient.bloodType}>{recipient.bloodType}</SelectItem>
+                                                ) : (
+                                                    recipient.availableBloodTypes?.map((type) => (
+                                                        <SelectItem key={type} value={type}>{type}</SelectItem>
+                                                    ))
+                                                )}
+                                            </SelectContent>
+                                        </Select>
+                                        <FormMessage />
+                                    </FormItem>
+                                )}
+                            />
+                            <FormField
+                                control={form.control}
+                                name="units"
+                                render={({ field }) => (
+                                    <FormItem>
+                                        <FormLabel>Units</FormLabel>
+                                        <FormControl>
+                                            <Input type="number" {...field} />
+                                        </FormControl>
+                                        <FormMessage />
+                                    </FormItem>
+                                )}
+                            />
+                            <FormField
+                                control={form.control}
+                                name="urgency"
+                                render={({ field }) => (
+                                    <FormItem>
+                                        <FormLabel>Urgency</FormLabel>
+                                        <Select onValueChange={field.onChange} defaultValue={field.value}>
+                                            <FormControl>
+                                                <SelectTrigger>
+                                                    <SelectValue placeholder="Select urgency" />
+                                                </SelectTrigger>
+                                            </FormControl>
+                                            <SelectContent>
+                                                {(['Low', 'Medium', 'High', 'Critical'] as Urgency[]).map(level => (
+                                                    <SelectItem key={level} value={level}>{level}</SelectItem>
+                                                ))}
+                                            </SelectContent>
+                                        </Select>
+                                        <FormMessage />
+                                    </FormItem>
+                                )}
+                            />
+                        </div>
+                        <DialogFooter>
+                             <Button type="button" variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>
+                            <Button type="submit" disabled={form.formState.isSubmitting}>
+                                {form.formState.isSubmitting ? <LoaderCircle className="h-4 w-4 animate-spin"/> : "Send Request"}
+                            </Button>
+                        </DialogFooter>
+                    </form>
+                </Form>
+            </DialogContent>
+        </Dialog>
+    );
+}
+
+function EmergencyPollDialog({ onSent, user }: {onSent: () => void, user: User}) {
+    const { toast } = useToast();
+    const [open, setOpen] = React.useState(false);
+    
+    const form = useForm<EmergencyPollFormValues>({
+        resolver: zodResolver(emergencyPollSchema),
+        defaultValues: {
+            message: '',
+        }
+    });
+
+    const onSubmit: SubmitHandler<EmergencyPollFormValues> = async (data) => {
+        try {
+            await createEmergencyPoll(user, data.message);
+            toast({ title: 'Emergency Poll Sent!', description: 'An urgent broadcast has been sent to all users.' });
+            onSent();
+            setOpen(false);
+            form.reset();
+        } catch (e: any) {
+            toast({ variant: 'destructive', title: 'Error', description: e.message || 'Failed to send emergency poll.' });
+        }
+    };
+    
+    return (
+        <Dialog open={open} onOpenChange={setOpen}>
+            <DialogTrigger asChild>
+            <Button variant="destructive">
+                <Siren className="mr-2 h-4 w-4" /> Create Emergency Poll
+            </Button>
+            </DialogTrigger>
+            <DialogContent>
+                <Form {...form}>
+                    <form onSubmit={form.handleSubmit(onSubmit)}>
+                        <DialogHeader>
+                            <DialogTitle>Create Emergency Poll</DialogTitle>
+                            <DialogDescription>
+                            This will send an urgent notification to all users. Use only in critical situations.
+                            </DialogDescription>
+                        </DialogHeader>
+                        <div className="py-4 space-y-4">
+                            <FormField control={form.control} name="message" render={({ field }) => (
+                                <FormItem><FormLabel>Message</FormLabel><FormControl><Textarea placeholder="Describe the emergency... (e.g., Due to a multi-car accident at Main St.)" {...field} /></FormControl><FormMessage /></FormItem>
+                            )} />
+                        </div>
+                        <DialogFooter>
+                            <Button type="button" variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>
+                            <Button variant="destructive" type="submit" disabled={form.formState.isSubmitting}>
+                                {form.formState.isSubmitting && <LoaderCircle className="mr-2 h-4 w-4 animate-spin" />}
+                                Send Urgent Broadcast
+                            </Button>
+                        </DialogFooter>
+                    </form>
+                </Form>
+            </DialogContent>
+        </Dialog>
+    );
+}
 
 
 function DeclineRequestDialog({ notification, onConfirm }: { notification: Notification, onConfirm: (reason: string) => void }) {
@@ -153,43 +404,76 @@ function DeclineRequestDialog({ notification, onConfirm }: { notification: Notif
     )
 }
 
-function AddDonationDialog({ user, onDonationAdded }: { user: User; onDonationAdded: () => void }) {
+function AddEditDonationDialog({ user, onSave, donation }: { user: User; onSave: () => void, donation?: Donation }) {
     const { toast } = useToast();
     const [open, setOpen] = React.useState(false);
     const form = useForm<DonationFormValues>({
         resolver: zodResolver(donationSchema),
-        defaultValues: {
+        defaultValues: donation ? {
+            ...donation,
+            date: parseISO(donation.date),
+        } : {
             units: 1,
             bloodType: user.bloodType,
             location: '',
         }
     });
+    
+    React.useEffect(() => {
+        if (donation) {
+            form.reset({
+                ...donation,
+                date: parseISO(donation.date),
+            })
+        } else {
+            form.reset({
+                units: 1,
+                bloodType: user.bloodType,
+                location: '',
+                date: new Date()
+            })
+        }
+    }, [donation, user, form])
 
     const onSubmit: SubmitHandler<DonationFormValues> = async (data) => {
         try {
-            await addDonationHistory({ ...data, date: data.date.toISOString(), donorEmail: user.email!, recipient: 'N/A' }); // recipient might need to be dynamic
-            toast({ title: 'Success', description: 'Donation history has been added.' });
-            onDonationAdded();
+            if (donation) {
+                await updateDonationHistory(donation._id, { ...data, date: data.date.toISOString(), donorEmail: user.email!, bloodType: data.bloodType as BloodType });
+                toast({ title: 'Success', description: 'Donation history has been updated.' });
+            } else {
+                await addDonationHistory({ ...data, date: data.date.toISOString(), donorEmail: user.email!, recipient: 'N/A', bloodType: data.bloodType as BloodType }); 
+                toast({ title: 'Success', description: 'Donation history has been added.' });
+            }
+            onSave();
             setOpen(false);
             form.reset();
-        } catch (e) {
-            toast({ variant: 'destructive', title: 'Error', description: 'Failed to add donation.' });
+        } catch (e: any) {
+            toast({ variant: 'destructive', title: 'Error', description: e.message || 'Failed to save donation.' });
         }
     };
 
     return (
         <Dialog open={open} onOpenChange={setOpen}>
             <DialogTrigger asChild>
-                <Button>
-                    <PlusCircle className="mr-2 h-4 w-4" /> Add Donation
-                </Button>
+                {donation ? (
+                    <Button variant="ghost" size="icon" className="h-8 w-8">
+                        <Pencil className="h-4 w-4" />
+                        <span className="sr-only">Edit</span>
+                    </Button>
+                ) : (
+                    <Button>
+                        <PlusCircle className="mr-2 h-4 w-4" /> Add Donation
+                    </Button>
+                )}
             </DialogTrigger>
             <DialogContent>
                 <Form {...form}>
                     <form onSubmit={form.handleSubmit(onSubmit)}>
                         <DialogHeader>
-                            <DialogTitle>Add Donation History</DialogTitle>
-                            <DialogDescription>Record a past donation to keep your history accurate.</DialogDescription>
+                            <DialogTitle>{donation ? 'Edit' : 'Add'} Donation History</DialogTitle>
+                            <DialogDescription>
+                                {donation ? 'Update your past donation.' : 'Record a past donation to keep your history accurate.'}
+                            </DialogDescription>
                         </DialogHeader>
                         <div className="py-4 space-y-4">
                              <FormField control={form.control} name="date" render={({ field }) => (<FormItem className="flex flex-col"><FormLabel>Donation Date</FormLabel><Popover><PopoverTrigger asChild><FormControl><Button variant={"outline"} className={cn("w-full pl-3 text-left font-normal", !field.value && "text-muted-foreground")}><CalendarIcon className="mr-2 h-4 w-4" />{field.value ? (format(field.value, "PPP")) : (<span>Pick a date</span>)}</Button></FormControl></PopoverTrigger><PopoverContent className="w-auto p-0" align="start"><Calendar mode="single" selected={field.value} onSelect={field.onChange} disabled={(date) => date > new Date()} initialFocus /></PopoverContent></Popover><FormMessage /></FormItem>)} />
@@ -222,10 +506,13 @@ function DonorPageContent() {
   );
   const [user, setUser] = React.useState<User | null>(null);
   const [loading, setLoading] = React.useState(true);
-  const [requests, setRequests] = React.useState<Notification[]>([]);
+  const [incomingRequests, setIncomingRequests] = React.useState<Notification[]>([]);
+  const [mySentRequestResponses, setMySentRequestResponses] = React.useState<Notification[]>([]);
   const [responding, setResponding] = React.useState<string | null>(null);
   const [donationHistory, setDonationHistory] = React.useState<Donation[]>([]);
-
+  const [potentialDonors, setPotentialDonors] = React.useState<User[]>([]);
+  const [filters, setFilters] = React.useState({ city: '', state: '', bloodType: '', role: '', donationType: '' });
+  const [appliedFilters, setAppliedFilters] = React.useState({ city: '', state: '', bloodType: '', role: '', donationType: '' });
 
   const profileForm = useForm<ProfileFormValues>({
     resolver: zodResolver(profileSchema),
@@ -241,13 +528,19 @@ function DonorPageContent() {
     },
   });
 
- const fetchUserData = React.useCallback(async (email: string) => {
+ const handleSave = useCallback(async () => {
     setLoading(true);
+    const email = sessionStorage.getItem('currentUserEmail');
+    if (!email) {
+      setLoading(false);
+      return;
+    }
     try {
-        const [userData, userNotifications, history] = await Promise.all([
+        const [userData, userNotifications, history, donors] = await Promise.all([
             getUser(email),
             getNotificationsForUser(email),
-            getDonationHistory(email)
+            getDonationHistory(email),
+            getPotentialDonors()
         ]);
 
         if (userData) {
@@ -255,11 +548,10 @@ function DonorPageContent() {
             profileForm.reset(userData);
         }
         
-        const incomingRequests = userNotifications.filter(
-            (notification) => notification.type === 'request' || notification.type === 'info'
-        );
-        setRequests(incomingRequests);
+        setIncomingRequests(userNotifications.filter(n => n.type === 'request' || n.type === 'emergency'));
+        setMySentRequestResponses(userNotifications.filter(n => ['response', 'decline'].includes(n.type)));
         setDonationHistory(history);
+        setPotentialDonors(donors.filter(d => d.email !== email));
 
     } catch (error) {
         console.error("Failed to fetch user data:", error);
@@ -275,21 +567,9 @@ function DonorPageContent() {
 
 
   React.useEffect(() => {
-    const email = sessionStorage.getItem('currentUserEmail');
-    if (email) {
-      fetchUserData(email);
-    } else {
-        setLoading(false);
-    }
-  }, [fetchUserData]);
+    handleSave();
+  }, [handleSave]);
 
-  const handleSave = () => {
-    toast({
-      title: 'Success!',
-      description: 'Your availability has been updated.',
-      action: <ToastAction altText="Undo">Undo</ToastAction>,
-    });
-  };
 
   const onProfileSubmit: SubmitHandler<ProfileFormValues> = async (data) => {
     if (!user?.email) {
@@ -306,6 +586,7 @@ function DonorPageContent() {
         title: 'Profile Updated!',
         description: 'Your details have been successfully saved.',
       });
+      handleSave();
     } catch (e) {
       toast({
         variant: 'destructive',
@@ -317,12 +598,12 @@ function DonorPageContent() {
 
   const handleAcceptRequest = async (notification: Notification) => {
     if (!user || !notification.requestId) return;
-    setResponding(notification.id);
+    setResponding(notification._id);
     try {
-        const result = await respondToRequest(notification.requestId, user, notification.requesterEmail);
+        const result = await respondToRequest(notification._id, notification.requestId, user, notification.requesterEmail);
         if (result.success) {
             toast({ title: "Request Accepted", description: "The requester has been notified." });
-            if(user.email) fetchUserData(user.email); // Refresh data
+            handleSave();
         } else {
             throw new Error(result.message);
         }
@@ -335,12 +616,12 @@ function DonorPageContent() {
   
   const handleDeclineRequest = async (notification: Notification, reason: string) => {
     if (!user || !notification.requestId) return;
-    setResponding(notification.id);
+    setResponding(notification._id);
      try {
-        const result = await declineRequest(notification.id, notification.requestId, user, notification.requesterEmail, reason);
+        const result = await declineRequest(notification._id, notification.requestId, user, notification.requesterEmail, reason);
         if (result.success) {
             toast({ title: "Request Declined", description: result.message });
-            if(user.email) fetchUserData(user.email); // Refresh data
+            handleSave();
         } else {
             throw new Error(result.message);
         }
@@ -355,18 +636,45 @@ function DonorPageContent() {
     try {
       await deleteDonationHistory(donationId);
       toast({ title: 'Success', description: 'Donation record deleted.' });
-      if (user?.email) fetchUserData(user.email); // Refresh data
+      handleSave();
     } catch (e) {
       toast({ variant: 'destructive', title: 'Error', description: 'Failed to delete record.' });
     }
   };
+
+  const handleFilterChange = (filterType: keyof typeof filters, value: string) => {
+    setFilters(prev => ({ ...prev, [filterType]: value }));
+  };
+
+  const handleApplyFilters = () => {
+    setAppliedFilters(filters);
+  };
+
+  const handleClearFilters = () => {
+    const cleared = { city: '', state: '', bloodType: '', role: '', donationType: '' };
+    setFilters(cleared);
+    setAppliedFilters(cleared);
+  };
+
+  const filteredDonors = React.useMemo(() => {
+    return potentialDonors.filter(donor => {
+        const normalize = (str: string | undefined) => (str || '').toLowerCase().replace(/\s+/g, '');
+        
+        const cityMatch = !appliedFilters.city || normalize(donor.city).includes(normalize(appliedFilters.city));
+        const stateMatch = !appliedFilters.state || normalize(donor.state).includes(normalize(appliedFilters.state));
+        const roleMatch = !appliedFilters.role || donor.role === appliedFilters.role;
+        const bloodTypeMatch = !appliedFilters.bloodType || (donor.bloodType === appliedFilters.bloodType) || (donor.availableBloodTypes && donor.availableBloodTypes.includes(appliedFilters.bloodType));
+        
+        return cityMatch && stateMatch && roleMatch && bloodTypeMatch;
+    });
+  }, [potentialDonors, appliedFilters]);
 
 
   const eligibilityDate = lastDonation
     ? new Date(lastDonation.getTime() + 56 * 24 * 60 * 60 * 1000)
     : new Date();
   const isEligible = new Date() > eligibilityDate;
-
+  
   if (loading || !user) {
     return (
       <div className="flex items-center justify-center h-full">
@@ -378,6 +686,10 @@ function DonorPageContent() {
 
   return (
     <>
+       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
+            <h1 className="text-2xl font-bold">Donor Dashboard</h1>
+            <EmergencyPollDialog user={user} onSent={handleSave} />
+        </div>
       {view === 'availability' && (
         <Card className="shadow-md">
           <CardHeader>
@@ -482,101 +794,247 @@ function DonorPageContent() {
             </div>
           </CardContent>
           <CardFooter>
-            <Button onClick={handleSave}>Save Changes</Button>
+            <Button onClick={() => toast({
+                title: 'Success!',
+                description: 'Your availability has been updated.',
+                action: <ToastAction altText="Undo">Undo</ToastAction>,
+            })}>Save Changes</Button>
           </CardFooter>
         </Card>
       )}
 
       {view === 'requests' && (
-        <Card>
-          <CardHeader>
-            <CardTitle>My Incoming Requests</CardTitle>
-            <CardDescription>
-              Blood requests you have received from individuals and facilities.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Date</TableHead>
-                  <TableHead>Requester</TableHead>
-                  <TableHead>Blood Type</TableHead>
-                  <TableHead>Urgency</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {requests.length > 0 ? (
-                  requests.map((req) => (
-                    <TableRow key={req.id}>
-                      <TableCell>
-                        {formatDistanceToNow(new Date(req.date), {
-                          addSuffix: true,
-                        })}
-                      </TableCell>
-                      <TableCell>
-                        <div className="font-medium">{req.requesterName}</div>
-                        <div className="text-xs text-muted-foreground">
-                          {req.requesterEmail}
+        <div className="space-y-6">
+             <Card className="border-destructive">
+                <CardHeader>
+                    <CardTitle className="flex items-center gap-2 text-destructive">
+                        <Siren />
+                        Emergency Broadcasts
+                    </CardTitle>
+                    <CardDescription>
+                        Urgent, high-priority requests from across the network.
+                    </CardDescription>
+                </CardHeader>
+                <CardContent>
+                    {incomingRequests.filter(req => req.type === 'emergency').length > 0 ? (
+                        <div className="space-y-4">
+                            {incomingRequests.filter(req => req.type === 'emergency').map(req => (
+                                <Card key={req._id} className="bg-destructive/10 p-4">
+                                    <div className="flex justify-between items-start mb-2">
+                                        <div>
+                                            <p className="font-semibold">{req.requesterName}</p>
+                                            <p className="text-xs text-muted-foreground">{formatDistanceToNow(new Date(req.date), { addSuffix: true })}</p>
+                                        </div>
+                                        <Badge variant="destructive">{req.urgency}</Badge>
+                                    </div>
+                                    <p className="text-sm">{req.message}</p>
+                                </Card>
+                            ))}
                         </div>
-                        <div className="text-xs text-muted-foreground">
-                          {req.requesterMobileNumber}
+                    ) : (
+                        <div className="text-center h-24 flex items-center justify-center">
+                            <p className="text-muted-foreground">No current emergency broadcasts.</p>
                         </div>
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant="outline">{req.bloodType}</Badge>
-                      </TableCell>
-                      <TableCell>
-                        <Badge
-                          variant="outline"
-                          className={cn('dark:!text-black', urgencyColors[req.urgency])}
-                        >
-                          {req.urgency}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-right space-x-2">
-                        {req.type === 'request' && req.requestId && (
-                            <>
-                                <Button
-                                variant="default"
-                                size="sm"
-                                onClick={() => handleAcceptRequest(req)}
-                                disabled={!!responding}
+                    )}
+                </CardContent>
+            </Card>
+            <Card>
+                <CardHeader>
+                <CardTitle>Incoming Requests for You</CardTitle>
+                <CardDescription>
+                    Direct requests sent to you from others in need.
+                </CardDescription>
+                </CardHeader>
+                <CardContent>
+                {/* Mobile view */}
+                <div className="space-y-4 md:hidden">
+                    {incomingRequests.filter(req => req.type === 'request').length > 0 ? incomingRequests.filter(req => req.type === 'request').map(req => (
+                    <Card key={req._id} className="p-4">
+                        <div className="flex justify-between items-start mb-4">
+                            <div>
+                            <p className="font-semibold">{req.requesterName}</p>
+                            <p className="text-xs text-muted-foreground">{formatDistanceToNow(new Date(req.date), { addSuffix: true })}</p>
+                            </div>
+                            <Badge variant="outline" className={cn('dark:!text-black', urgencyColors[req.urgency])}>{req.urgency}</Badge>
+                        </div>
+                        <div className="space-y-2 text-sm mb-4">
+                        <div className="flex justify-between">
+                            <span className="text-muted-foreground">Blood Type:</span>
+                            <Badge variant="outline">{req.bloodType}</Badge>
+                        </div>
+                        <div className="flex justify-between">
+                            <span className="text-muted-foreground">Contact:</span>
+                            <span>{req.requesterMobileNumber || req.requesterEmail}</span>
+                        </div>
+                        </div>
+                        {req.requestId && (
+                            <div className="flex justify-end gap-2">
+                                <Button variant="default" size="sm" onClick={() => handleAcceptRequest(req)} disabled={!!responding}>
+                                    {responding === req._id ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <><Check className="mr-1 h-4 w-4" /> Accept</>}
+                                </Button>
+                                <DeclineRequestDialog notification={req} onConfirm={(reason) => handleDeclineRequest(req, reason)} />
+                            </div>
+                        )}
+                    </Card>
+                    )) : (
+                    <div className="text-center h-24 flex items-center justify-center">
+                        <p className="text-muted-foreground">No new requests.</p>
+                    </div>
+                    )}
+                </div>
+
+                {/* Desktop view */}
+                <div className="hidden md:block">
+                    <Table>
+                    <TableHeader>
+                        <TableRow>
+                        <TableHead>Date</TableHead>
+                        <TableHead>Requester</TableHead>
+                        <TableHead>Blood Type</TableHead>
+                        <TableHead>Urgency</TableHead>
+                        <TableHead className="text-right">Actions</TableHead>
+                        </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                        {incomingRequests.filter(req => req.type === 'request').length > 0 ? (
+                        incomingRequests.filter(req => req.type === 'request').map((req) => (
+                            <TableRow key={req._id}>
+                            <TableCell>
+                                {formatDistanceToNow(new Date(req.date), {
+                                addSuffix: true,
+                                })}
+                            </TableCell>
+                            <TableCell>
+                                <div className="font-medium">{req.requesterName}</div>
+                                <div className="text-xs text-muted-foreground">
+                                {req.requesterEmail}
+                                </div>
+                            </TableCell>
+                            <TableCell>
+                                <Badge variant="outline">{req.bloodType}</Badge>
+                            </TableCell>
+                            <TableCell>
+                                <Badge
+                                variant="outline"
+                                className={cn('dark:!text-black', urgencyColors[req.urgency])}
                                 >
-                                {responding === req.id ? (
-                                    <LoaderCircle className="h-4 w-4 animate-spin" />
-                                ) : (
+                                {req.urgency}
+                                </Badge>
+                            </TableCell>
+                            <TableCell className="flex justify-end text-right space-x-2">
+                                {req.requestId && (
                                     <>
-                                    <Check className="mr-1 h-4 w-4" /> Accept
+                                        <Button
+                                        variant="default"
+                                        size="sm"
+                                        onClick={() => handleAcceptRequest(req)}
+                                        disabled={!!responding}
+                                        >
+                                        {responding === req._id ? (
+                                            <LoaderCircle className="h-4 w-4 animate-spin" />
+                                        ) : (
+                                            <>
+                                            <Check className="mr-1 h-4 w-4" /> Accept
+                                            </>
+                                        )}
+                                        </Button>
+                                        <DeclineRequestDialog
+                                        notification={req}
+                                        onConfirm={(reason) =>
+                                            handleDeclineRequest(req, reason)
+                                        }
+                                        />
                                     </>
                                 )}
-                                </Button>
-                                <DeclineRequestDialog
-                                notification={req}
-                                onConfirm={(reason) =>
-                                    handleDeclineRequest(req, reason)
-                                }
-                                />
-                            </>
+                            </TableCell>
+                            </TableRow>
+                        ))
+                        ) : (
+                        <TableRow>
+                            <TableCell colSpan={5} className="text-center h-24">
+                            No new requests.
+                            </TableCell>
+                        </TableRow>
                         )}
-                        {req.type === 'info' && (
-                             <p className="text-xs text-muted-foreground pr-2">Informational broadcast</p>
+                    </TableBody>
+                    </Table>
+                </div>
+                </CardContent>
+            </Card>
+
+            <Card>
+                <CardHeader>
+                <CardTitle>My Sent Requests - Status</CardTitle>
+                <CardDescription>
+                    Status updates on blood requests you have sent.
+                </CardDescription>
+                </CardHeader>
+                <CardContent>
+                {/* Mobile view */}
+                <div className="space-y-4 md:hidden">
+                    {mySentRequestResponses.length > 0 ? mySentRequestResponses.map(req => (
+                    <Card key={req._id} className="p-4">
+                        <div className="flex justify-between items-start mb-4">
+                            <div>
+                            <p className="font-semibold">{req.requesterName}</p>
+                            <p className="text-xs text-muted-foreground">{formatDistanceToNow(new Date(req.date), { addSuffix: true })}</p>
+                            </div>
+                            <Badge variant="outline" className={cn(
+                                req.type === 'response' && 'text-green-500 border-green-500',
+                                req.type === 'decline' && 'text-red-500 border-red-500',
+                            )}>{req.type}</Badge>
+                        </div>
+                        <p className='text-sm'>{req.message}</p>
+                    </Card>
+                    )) : (
+                    <div className="text-center h-24 flex items-center justify-center">
+                        <p className="text-muted-foreground">No new responses or notifications.</p>
+                    </div>
+                    )}
+                </div>
+
+                {/* Desktop view */}
+                <div className="hidden md:block">
+                    <Table>
+                    <TableHeader>
+                        <TableRow>
+                        <TableHead>Date</TableHead>
+                        <TableHead>From</TableHead>
+                        <TableHead>Message</TableHead>
+                        <TableHead>Type</TableHead>
+                        </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                        {mySentRequestResponses.length > 0 ? (
+                        mySentRequestResponses.map((req) => (
+                            <TableRow key={req._id}>
+                            <TableCell>{formatDistanceToNow(new Date(req.date), { addSuffix: true })}</TableCell>
+                            <TableCell>
+                                <div className="font-medium">{req.requesterName}</div>
+                                <div className="text-xs text-muted-foreground">{req.requesterEmail}</div>
+                            </TableCell>
+                            <TableCell><p className="text-sm">{req.message}</p></TableCell>
+                            <TableCell>
+                                <Badge variant="outline" className={cn(
+                                    req.type === 'response' && 'text-green-500 border-green-500',
+                                    req.type === 'decline' && 'text-red-500 border-red-500',
+                                )}>
+                                {req.type}
+                                </Badge>
+                            </TableCell>
+                            </TableRow>
+                        ))
+                        ) : (
+                        <TableRow>
+                            <TableCell colSpan={4} className="text-center h-24">No new responses or notifications.</TableCell>
+                        </TableRow>
                         )}
-                      </TableCell>
-                    </TableRow>
-                  ))
-                ) : (
-                  <TableRow>
-                    <TableCell colSpan={5} className="text-center h-24">
-                      No new requests.
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
+                    </TableBody>
+                    </Table>
+                </div>
+                </CardContent>
+            </Card>
+        </div>
       )}
 
       {view === 'history' && (
@@ -588,64 +1046,246 @@ function DonorPageContent() {
                 A record of your past donations. Thank you for your support!
               </CardDescription>
             </div>
-            <AddDonationDialog
+            <AddEditDonationDialog
               user={user}
-              onDonationAdded={() => fetchUserData(user.email!)}
+              onSave={handleSave}
             />
           </CardHeader>
           <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Date</TableHead>
-                  <TableHead>Location</TableHead>
-                  <TableHead>Blood Type</TableHead>
-                  <TableHead>Units</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {donationHistory.length > 0 ? (
-                  donationHistory.map((donation) => (
-                    <TableRow key={donation.id}>
-                      <TableCell>
-                        {format(new Date(donation.date), 'MMM d, yyyy')}
-                      </TableCell>
-                      <TableCell>{donation.location}</TableCell>
-                      <TableCell>
-                        <Badge
-                          variant="outline"
-                          className="text-primary border-primary/50"
-                        >
-                          {donation.bloodType}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>{donation.units}</TableCell>
-                      <TableCell className="text-right">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="text-destructive hover:text-destructive"
-                          onClick={() => handleDeleteDonation(donation.id)}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                          <span className="sr-only">Delete</span>
-                        </Button>
-                      </TableCell>
+             {/* Mobile View */}
+            <div className="md:hidden space-y-4">
+              {donationHistory.length > 0 ? (
+                donationHistory.map((donation) => (
+                  <Card key={donation._id} className="p-4">
+                    <div className="flex justify-between items-start mb-4">
+                        <div>
+                           <p className="font-semibold">{donation.location}</p>
+                           <p className="text-xs text-muted-foreground">{format(new Date(donation.date), 'MMM d, yyyy')}</p>
+                        </div>
+                        <div className="flex items-center">
+                            <AddEditDonationDialog user={user} onSave={handleSave} donation={donation} />
+                            <Button
+                            variant="ghost"
+                            size="icon"
+                            className="text-destructive hover:text-destructive h-8 w-8"
+                            onClick={() => handleDeleteDonation(donation._id)}
+                            >
+                            <Trash2 className="h-4 w-4" />
+                            <span className="sr-only">Delete</span>
+                            </Button>
+                        </div>
+                    </div>
+                    <div className="flex justify-between items-center text-sm">
+                        <div className="flex gap-2 items-center">
+                            <Badge variant="outline" className="text-primary border-primary/50">{donation.bloodType}</Badge>
+                            <span>{donation.units} units</span>
+                        </div>
+                    </div>
+                  </Card>
+                ))
+              ) : (
+                <div className="text-center h-24 flex items-center justify-center">
+                  <p className="text-muted-foreground">No donation history recorded.</p>
+                </div>
+              )}
+            </div>
+            {/* Desktop View */}
+            <div className="hidden md:block">
+                <Table>
+                <TableHeader>
+                    <TableRow>
+                    <TableHead>Date</TableHead>
+                    <TableHead>Location</TableHead>
+                    <TableHead>Blood Type</TableHead>
+                    <TableHead>Units</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
                     </TableRow>
-                  ))
-                ) : (
-                  <TableRow>
-                    <TableCell colSpan={5} className="text-center h-24">
-                      No donation history recorded.
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
+                </TableHeader>
+                <TableBody>
+                    {donationHistory.length > 0 ? (
+                    donationHistory.map((donation) => (
+                        <TableRow key={donation._id}>
+                        <TableCell>
+                            {format(new Date(donation.date), 'MMM d, yyyy')}
+                        </TableCell>
+                        <TableCell>{donation.location}</TableCell>
+                        <TableCell>
+                            <Badge
+                            variant="outline"
+                            className="text-primary border-primary/50"
+                            >
+                            {donation.bloodType}
+                            </Badge>
+                        </TableCell>
+                        <TableCell>{donation.units}</TableCell>
+                        <TableCell className="text-right">
+                            <AddEditDonationDialog user={user} onSave={handleSave} donation={donation} />
+                            <Button
+                            variant="ghost"
+                            size="icon"
+                            className="text-destructive hover:text-destructive"
+                            onClick={() => handleDeleteDonation(donation._id)}
+                            >
+                            <Trash2 className="h-4 w-4" />
+                            <span className="sr-only">Delete</span>
+                            </Button>
+                        </TableCell>
+                        </TableRow>
+                    ))
+                    ) : (
+                    <TableRow>
+                        <TableCell colSpan={5} className="text-center h-24">
+                        No donation history recorded.
+                        </TableCell>
+                    </TableRow>
+                    )}
+                </TableBody>
+                </Table>
+            </div>
           </CardContent>
         </Card>
       )}
+      
+      {view === 'find-donors' && (
+            <Card className="w-full">
+                <CardHeader>
+                    <CardTitle>Find Donors &amp; Facilities</CardTitle>
+                    <CardDescription>List of available donors, hospitals, and blood banks.</CardDescription>
+                </CardHeader>
+                <CardContent>
+                    <div className="mb-6 p-4 border rounded-lg bg-card">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                            <Input placeholder="City" value={filters.city} onChange={(e) => handleFilterChange('city', e.target.value)} />
+                            <Input placeholder="State" value={filters.state} onChange={(e) => handleFilterChange('state', e.target.value)} />
+                            <Select value={filters.bloodType} onValueChange={(value) => handleFilterChange('bloodType', value === 'all' ? '' : value)}>
+                                <SelectTrigger><SelectValue placeholder="Blood Type" /></SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="all">All Blood Types</SelectItem>
+                                    {bloodTypes.map(type => <SelectItem key={type} value={type}>{type}</SelectItem>)}
+                                </SelectContent>
+                            </Select>
+                            <Select value={filters.donationType} onValueChange={(value) => handleFilterChange('donationType', value === 'all' ? '' : value)}>
+                                <SelectTrigger><SelectValue placeholder="Donation Type" /></SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="all">All Donation Types</SelectItem>
+                                    {donationTypes.map(type => <SelectItem key={type} value={type}>{type.replace(/_/g, ' ')}</SelectItem>)}
+                                </SelectContent>
+                            </Select>
+                            <Select value={filters.role} onValueChange={(value) => handleFilterChange('role', value === 'all' ? '' : value)}>
+                                <SelectTrigger><SelectValue placeholder="Role" /></SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="all">All Roles</SelectItem>
+                                    <SelectItem value="Donor">Donor</SelectItem>
+                                    <SelectItem value="Individual">Individual</SelectItem>
+                                    <SelectItem value="Hospital">Hospital</SelectItem>
+                                    <SelectItem value="Blood Bank">Blood Bank</SelectItem>
+                                </SelectContent>
+                            </Select>
+                        </div>
+                         <div className="flex justify-end gap-2 mt-4">
+                            <Button onClick={handleApplyFilters}><Search className="mr-2 h-4 w-4" /> Apply Filters</Button>
+                            <Button variant="ghost" onClick={handleClearFilters}>Clear Filters</Button>
+                        </div>
+                    </div>
+                    {/* Mobile View: Card List */}
+                    <div className="md:hidden space-y-4">
+                        {filteredDonors.length > 0 ? (
+                            filteredDonors.map(donor => (
+                                <Card key={donor._id} className="p-4">
+                                    <div className="flex justify-between items-start">
+                                        <div>
+                                            <p className="font-bold">{donor.name}</p>
+                                            <p className="text-sm text-muted-foreground">{donor.city}, {donor.state}</p>
+                                            <div className="mt-2 space-y-1 text-xs text-muted-foreground">
+                                                <p className="flex items-center gap-1"><Mail className="h-3 w-3" /> {donor.email}</p>
+                                                <p className="flex items-center gap-1"><Phone className="h-3 w-3" /> {donor.mobileNumber}</p>
+                                            </div>
+                                        </div>
+                                        <Badge variant={donor.role === 'Donor' ? 'secondary' : 'outline'}>{donor.role}</Badge>
+                                    </div>
+                                    <div className="flex items-center justify-between mt-4">
+                                        <div className="flex flex-col text-sm space-y-1">
+                                            {(donor.role === 'Donor' || donor.role === 'Individual') && donor.bloodType ? (
+                                                <Badge variant="outline" className="text-primary border-primary/50">{donor.bloodType}</Badge>
+                                            ) : (donor.role === 'Hospital' || donor.role === 'Blood Bank') && donor.inventorySummary ? (
+                                              <>
+                                                <p><span className="font-semibold">WB:</span> {donor.inventorySummary.whole_blood} units</p>
+                                                <p><span className="font-semibold">Plasma:</span> {donor.inventorySummary.plasma} units</p>
+                                                <p><span className="font-semibold">RBC:</span> {donor.inventorySummary.red_blood_cells} units</p>
+                                                <div className="flex flex-wrap gap-1 pt-2">
+                                                    {donor.availableBloodTypes?.map(type => <Badge key={type} variant="outline">{type}</Badge>)}
+                                                </div>
+                                              </>
+                                            ) : (
+                                                <span className="text-xs text-muted-foreground">N/A</span>
+                                            )}
+                                        </div>
+                                        <DirectRequestDialog recipient={donor} requester={user} onSuccess={handleSave} />
+                                    </div>
+                                </Card>
+                            ))
+                        ) : (
+                             <div className="text-center h-24 flex items-center justify-center">
+                                <p className="text-muted-foreground">No available donors or facilities found.</p>
+                            </div>
+                        )}
+                    </div>
+                    {/* Desktop View: Table */}
+                    <div className="hidden md:block">
+                        <Table>
+                            <TableHeader>
+                                <TableRow>
+                                    <TableHead>Name & Contact</TableHead>
+                                    <TableHead>Role</TableHead>
+                                    <TableHead>Location</TableHead>
+                                    <TableHead>Inventory / Blood Type</TableHead>
+                                    <TableHead className="text-right">Action</TableHead>
+                                </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                                {filteredDonors.length > 0 ? (
+                                    filteredDonors.map(donor => (
+                                        <TableRow key={donor._id}>
+                                            <TableCell>
+                                                <div className="font-medium">{donor.name}</div>
+                                                <div className="text-xs text-muted-foreground flex items-center gap-1"><Mail className="h-3 w-3" />{donor.email}</div>
+                                                <div className="text-xs text-muted-foreground flex items-center gap-1"><Phone className="h-3 w-3" />{donor.mobileNumber}</div>
+                                            </TableCell>
+                                            <TableCell>
+                                            <Badge variant={donor.role === 'Donor' ? 'secondary' : 'outline'}>{donor.role}</Badge>
+                                            </TableCell>
+                                            <TableCell>{donor.city}, {donor.state}</TableCell>
+                                            <TableCell className="text-xs">
+                                                {(donor.role === 'Donor' || donor.role === 'Individual') && donor.bloodType ? <Badge variant="outline" className="text-primary border-primary/50">{donor.bloodType}</Badge> 
+                                                : (donor.role === 'Hospital' || donor.role === 'Blood Bank') && donor.inventorySummary ? (
+                                                    <div className="flex flex-col">
+                                                        <div className="flex flex-wrap gap-1 pb-1">
+                                                            {donor.availableBloodTypes?.map(type => <Badge key={type} variant="outline" className="text-xs">{type}</Badge>)}
+                                                        </div>
+                                                        <span>Whole Blood: {donor.inventorySummary.whole_blood} units</span>
+                                                        <span>Plasma: {donor.inventorySummary.plasma} units</span>
+                                                        <span>Red Blood Cells: {donor.inventorySummary.red_blood_cells} units</span>
+                                                    </div>
+                                                ) : (
+                                                    <span className="text-muted-foreground">N/A</span>
+                                                )}
+                                            </TableCell>
+                                            <TableCell className="text-right">
+                                                <DirectRequestDialog recipient={donor} requester={user} onSuccess={handleSave} />
+                                            </TableCell>
+                                        </TableRow>
+                                    ))
+                                ) : (
+                                    <TableRow>
+                                        <TableCell colSpan={5} className="h-24 text-center">No available donors or facilities found.</TableCell>
+                                    </TableRow>
+                                )}
+                            </TableBody>
+                        </Table>
+                    </div>
+                </CardContent>
+            </Card>
+        )}
 
       {view === 'profile' && (
         <Card>
@@ -657,7 +1297,7 @@ function DonorPageContent() {
                   Update your personal information.
                 </CardDescription>
               </CardHeader>
-              <CardContent className="space-y-4">
+              <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
                 <FormField
                   control={profileForm.control}
                   name="name"
@@ -699,19 +1339,6 @@ function DonorPageContent() {
                 />
                 <FormField
                   control={profileForm.control}
-                  name="address"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Address</FormLabel>
-                      <FormControl>
-                        <Input {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={profileForm.control}
                   name="bloodType"
                   render={({ field }) => (
                     <FormItem>
@@ -723,47 +1350,60 @@ function DonorPageContent() {
                     </FormItem>
                   )}
                 />
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                  <FormField
+                <FormField
+                  control={profileForm.control}
+                  name="address"
+                  render={({ field }) => (
+                    <FormItem className="md:col-span-2">
+                      <FormLabel>Address</FormLabel>
+                      <FormControl>
+                        <Input {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                
+                <FormField
                     control={profileForm.control}
                     name="city"
                     render={({ field }) => (
-                      <FormItem>
+                    <FormItem>
                         <FormLabel>City</FormLabel>
                         <FormControl>
-                          <Input {...field} />
+                        <Input {...field} />
                         </FormControl>
                         <FormMessage />
-                      </FormItem>
+                    </FormItem>
                     )}
-                  />
-                  <FormField
+                />
+                <FormField
                     control={profileForm.control}
                     name="state"
                     render={({ field }) => (
-                      <FormItem>
+                    <FormItem>
                         <FormLabel>State</FormLabel>
                         <FormControl>
-                          <Input {...field} />
+                        <Input {...field} />
                         </FormControl>
                         <FormMessage />
-                      </FormItem>
+                    </FormItem>
                     )}
-                  />
-                  <FormField
+                />
+                <FormField
                     control={profileForm.control}
                     name="country"
                     render={({ field }) => (
-                      <FormItem>
+                    <FormItem>
                         <FormLabel>Country</FormLabel>
                         <FormControl>
-                          <Input {...field} />
+                        <Input {...field} />
                         </FormControl>
                         <FormMessage />
-                      </FormItem>
+                    </FormItem>
                     )}
-                  />
-                </div>
+                />
+
               </CardContent>
               <CardFooter>
                 <Button

@@ -47,15 +47,15 @@ const kpiData = [
 ];
 
 const quickLinks = [
-  { href: '/dashboard/requester', title: 'Request Blood', description: 'Make a new blood request' },
-  { href: '/dashboard/donor', title: 'Update Availability', description: 'Let others know you can donate' },
-  { href: '/dashboard/hospital', title: 'Manage Inventory', description: 'Update your current stock' },
-  { href: '/dashboard/blood-bank', title: 'Match Requests', description: 'Run AI-powered matching' },
+  { href: '/dashboard/admin/user-management', title: 'Manage Users', description: 'View, ban, or delete users' },
+  { href: '/dashboard/admin/monitoring', title: 'System Monitoring', description: 'Check system health and stats' },
+  { href: '/dashboard/admin/inventory', title: 'Inventory Overview', description: 'View all blood units in the system' },
+  { href: '/dashboard/admin/forecasting', title: 'Demand Forecasting', description: 'Run AI-powered demand analysis' },
 ];
 
 export default function OverviewPage() {
   return (
-    <>
+    <div className="space-y-8">
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
         {kpiData.map((kpi) => (
           <Card key={kpi.title} className="shadow-md transition-transform hover:scale-105 hover:shadow-lg">
@@ -71,7 +71,7 @@ export default function OverviewPage() {
         ))}
       </div>
 
-      <div className="grid gap-6 md:grid-cols-2">
+      <div className="grid grid-cols-1 gap-8 lg:grid-cols-2">
         <Card className="shadow-md">
           <CardHeader>
             <CardTitle>Quick Actions</CardTitle>
@@ -101,7 +101,7 @@ export default function OverviewPage() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="space-y-4">
+            <div className="space-y-6">
                 <div className="flex items-start gap-4">
                     <div className="flex h-8 w-8 items-center justify-center rounded-full bg-green-100 dark:bg-green-900/50">
                         <Droplet className="h-4 w-4 text-green-600 dark:text-green-400"/>
@@ -136,6 +136,6 @@ export default function OverviewPage() {
           </CardContent>
         </Card>
       </div>
-    </>
+    </div>
   );
 }

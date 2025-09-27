@@ -1,3 +1,4 @@
+
 'use client';
 
 import * as React from 'react';
@@ -12,6 +13,7 @@ import {
   SidebarFooter,
   SidebarInset,
   SidebarTrigger,
+  useSidebar,
 } from '@/components/ui/sidebar';
 import {
   Avatar,
@@ -74,6 +76,12 @@ const allMenuItems = [
     roles: ['Admin'] as Role[],
   },
   {
+    href: '/dashboard/admin/inventory',
+    label: 'Inventory Overview',
+    icon: Package,
+    roles: ['Admin'] as Role[],
+  },
+  {
     href: '/dashboard/admin/forecasting',
     label: 'Demand Forecasting',
     icon: LineChart,
@@ -89,10 +97,17 @@ const allMenuItems = [
   },
   {
     href: '/dashboard/donor',
-    label: 'Incoming Requests',
+    label: 'Request Status & Responses',
     icon: ShieldQuestion,
     roles: ['Donor'] as Role[],
     view: 'requests',
+  },
+    {
+    href: '/dashboard/donor',
+    label: 'Find Donors',
+    icon: Search,
+    roles: ['Donor'] as Role[],
+    view: 'find-donors',
   },
   {
     href: '/dashboard/donor',
@@ -115,6 +130,13 @@ const allMenuItems = [
     icon: LifeBuoy,
     roles: ['Individual'] as Role[],
     view: 'request',
+  },
+   {
+    href: '/dashboard/requester',
+    label: 'Request Status',
+    icon: ShieldQuestion,
+    roles: ['Individual'] as Role[],
+    view: 'incoming-requests',
   },
   {
     href: '/dashboard/requester',
@@ -140,10 +162,17 @@ const allMenuItems = [
   },
   {
     href: '/dashboard/hospital',
-    label: 'Incoming Requests',
+    label: 'Request Status & Responses',
     icon: ShieldQuestion,
     roles: ['Hospital'] as Role[],
     view: 'requests',
+  },
+  {
+    href: '/dashboard/hospital',
+    label: 'AI Analysis',
+    icon: FlaskConical,
+    roles: ['Hospital'] as Role[],
+    view: 'analysis',
   },
   {
     href: '/dashboard/hospital',
@@ -165,13 +194,6 @@ const allMenuItems = [
     icon: Megaphone,
     roles: ['Hospital'] as Role[],
     view: 'polls',
-  },
-  {
-    href: '/dashboard/hospital',
-    label: 'AI Analysis',
-    icon: FlaskConical,
-    roles: ['Hospital'] as Role[],
-    view: 'analysis',
   },
   {
     href: '/dashboard/hospital',
@@ -204,7 +226,7 @@ const allMenuItems = [
   },
   {
     href: '/dashboard/blood-bank',
-    label: 'Incoming Requests',
+    label: 'Request Status & Responses',
     icon: ShieldQuestion,
     roles: ['Blood Bank'] as Role[],
     view: 'requests',
@@ -244,6 +266,13 @@ const allMenuItems = [
     roles: ['Blood Bank'] as Role[],
     view: 'transfer-history',
   },
+   {
+    href: '/dashboard/blood-bank',
+    label: 'Received History',
+    icon: Package,
+    roles: ['Blood Bank'] as Role[],
+    view: 'received-history',
+  },
 ];
 
 const rolePageMap: Record<Role, string> = {
@@ -273,6 +302,7 @@ function DashboardLayoutContent({
   const currentView = searchParams.get('view');
   const [user, setUser] = React.useState<DbUser | null>(null);
   const [loading, setLoading] = React.useState(true);
+  const { setOpen } = useSidebar();
 
   React.useEffect(() => {
     const fetchUser = async () => {
@@ -357,9 +387,8 @@ function DashboardLayoutContent({
 
 
   return (
-    <SidebarProvider defaultOpen>
-      <div className="flex min-h-screen">
-        <Sidebar collapsible="offcanvas">
+      <div className="relative flex min-h-screen">
+        <Sidebar>
           <SidebarHeader className="p-4">
             <div className="flex items-center gap-2">
               <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary text-primary-foreground">
@@ -376,6 +405,7 @@ function DashboardLayoutContent({
                 <SidebarMenuItem key={`${item.href}-${item.view || 'default'}`}>
                   <Link href={`${item.href}${item.view ? `?view=${item.view}` : ''}`} passHref>
                     <SidebarMenuButton
+                      onClick={() => setOpen(false)}
                       isActive={pathname === item.href && (currentRole !== 'Admin' ? (item.view ? currentView === item.view : !currentView) : true)}
                       tooltip={item.label}
                     >
@@ -405,8 +435,8 @@ function DashboardLayoutContent({
             </div>
           </SidebarFooter>
         </Sidebar>
-        <SidebarInset>
-          <header className="flex h-16 items-center gap-4 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 px-4 sm:px-6">
+        <div className="flex flex-1 flex-col">
+          <header className="flex h-16 items-center gap-4 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 px-4 sm:px-6 sticky top-0 z-40">
             <SidebarTrigger />
             <h1 className="text-xl font-semibold font-headline">
               {getPageTitle()}
@@ -418,14 +448,14 @@ function DashboardLayoutContent({
           <main className="flex-1 p-4 sm:p-6">
             {children}
           </main>
-        </SidebarInset>
+        </div>
       </div>
-    </SidebarProvider>
   );
 }
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
     return (
+      <SidebarProvider>
         <Suspense fallback={
             <div className="flex h-screen w-full items-center justify-center">
                 <LoaderCircle className="h-8 w-8 animate-spin" />
@@ -434,5 +464,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         }>
             <DashboardLayoutContent>{children}</DashboardLayoutContent>
         </Suspense>
+      </SidebarProvider>
     )
 }
