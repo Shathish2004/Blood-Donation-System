@@ -254,7 +254,7 @@ const allMenuItems = [
   },
   {
     href: '/dashboard/blood-bank',
-    label: 'Request History',
+    label: 'Inventory Overview',
     icon: History,
     roles: ['Blood Bank'] as Role[],
     view: 'request-history',
@@ -311,6 +311,7 @@ function DashboardLayoutContent({
         try {
           if (email === 'admin@bloodnet.com') {
               setUser({
+                  _id: 'admin',
                   email: 'admin@bloodnet.com',
                   role: 'Admin',
                   name: 'Administrator',
@@ -420,7 +421,7 @@ function DashboardLayoutContent({
           <SidebarFooter className="p-4">
             <div className="flex items-center gap-3">
               <Avatar>
-                <AvatarImage src="https://picsum.photos/seed/avatar/40/40" alt="User" />
+                <AvatarImage src={`https://picsum.photos/seed/${user.email}/40/40`} alt="User" />
                 <AvatarFallback>{user.name?.charAt(0).toUpperCase()}</AvatarFallback>
               </Avatar>
               <div className="flex flex-col text-sm truncate">
