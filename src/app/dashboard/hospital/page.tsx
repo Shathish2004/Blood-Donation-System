@@ -65,7 +65,7 @@ import { Suspense, useCallback } from 'react';
 import { Form, FormControl, FormField, FormMessage, FormLabel, FormItem } from '@/components/ui/form';
 import { useSearchParams } from 'next/navigation';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { AITools } from './ai-tools';
+import { AIForms } from '@/app/dashboard/blood-bank/ai-forms';
 import { indianStatesAndDistricts, states, districts } from '@/lib/indian-states-cities';
 
 const unitSchema = z.object({
@@ -1709,7 +1709,7 @@ function HospitalPageContent() {
         </Tabs>
       )}
 
-      {view === 'analysis' && <AITools onSave={handleSave} />}
+      {view === 'analysis' && <AIForms onSave={handleSave} />}
     </div>
   );
 }
