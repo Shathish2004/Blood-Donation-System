@@ -25,7 +25,7 @@ import {
 import clientPromise from '@/lib/mongodb';
 import type {BloodRequest, Notification, Urgency, Donation, BloodUnit, Transfer, BloodOffer, DonationType, BloodType} from '@/lib/types';
 import type {WithId, Document, ObjectId} from 'mongodb';
-import { addDays } from 'date-fns';
+import { addDays, subDays } from 'date-fns';
 
 export type User = {
   _id?: string; // Changed to string to be serializable
@@ -51,41 +51,6 @@ export type User = {
 };
 
 type DbUser = Omit<User, '_id'> & { _id: ObjectId };
-
-
-const mockUsers: User[] = [
-    { _id: 'mock1', email: 'donor@test.com', password: 'password', role: 'Donor', name: 'John Doe', address: '123 Life St, Vital City', bloodType: 'O+', mobileNumber: '111-222-3333', city: 'Vital City', state: 'CA', country: 'USA', status: 'active' },
-    { _id: 'mock2', email: 'individual@test.com', password: 'password', role: 'Individual', name: 'Jane Smith', address: '456 Health Ave, Metroburg', bloodType: 'A-', mobileNumber: '444-555-6666', city: 'Metroburg', state: 'NY', country: 'USA', status: 'active' },
-    { _id: 'mock3', email: 'hospital@test.com', password: 'password', role: 'Hospital', name: 'City General Hospital', licenseNo: 'HOS12345', location: 'Downtown', mobileNumber: '777-888-9999', city: 'Metroburg', state: 'NY', country: 'USA', status: 'active', availableBloodTypes: ['O+', 'A-'], inventorySummary: { whole_blood: 15, plasma: 5, red_blood_cells: 0 } },
-    { _id: 'mock4', email: 'bloodbank@test.com', password: 'password', role: 'Blood Bank', name: 'Regional Blood Bank', licenseNo: 'BB67890', location: 'Uptown', mobileNumber: '123-456-7890', city: 'Vital City', state: 'CA', country: 'USA', status: 'active', availableBloodTypes: ['B+', 'AB+'], inventorySummary: { whole_blood: 10, plasma: 0, red_blood_cells: 8 } },
-    { _id: 'mock5', email: 'banned@test.com', password: 'password', role: 'Donor', name: 'Banned User', address: '999 Problem Rd', bloodType: 'B+', mobileNumber: '000-000-0000', city: 'Outcast City', state: 'FL', country: 'USA', status: 'banned' },
-];
-
-const mockInventory: BloodUnit[] = [
-    { _id: '1', bloodType: 'O+', donationType: 'whole_blood', units: 10, collectionDate: '2023-10-01T00:00:00.000Z', expirationDate: '2023-11-12T00:00:00.000Z', location: 'hospital@test.com', locationName: 'City General Hospital', locationEmail: 'hospital@test.com', locationMobile: '777-888-9999'},
-    { _id: '2', bloodType: 'A-', donationType: 'plasma', units: 5, collectionDate: '2023-09-15T00:00:00.000Z', expirationDate: '2024-09-14T00:00:00.000Z', location: 'hospital@test.com', locationName: 'City General Hospital', locationEmail: 'hospital@test.com', locationMobile: '777-888-9999'},
-    { _id: '3', bloodType: 'B+', donationType: 'red_blood_cells', units: 8, collectionDate: '2023-10-10T00:00:00.000Z', expirationDate: '2023-11-21T00:00:00.000Z', location: 'bloodbank@test.com', locationName: 'Regional Blood Bank', locationEmail: 'bloodbank@test.com', locationMobile: '123-456-7890'},
-    { _id: '4', bloodType: 'AB+', donationType: 'whole_blood', units: 2, collectionDate: '2023-10-20T00:00:00.000Z', expirationDate: '2023-12-01T00:00:00.000Z', location: 'bloodbank@test.com', locationName: 'Regional Blood Bank', locationEmail: 'bloodbank@test.com', locationMobile: '123-456-7890'},
-];
-
-const mockRequests: BloodRequest[] = [
-    { _id: 'req1', date: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(), bloodType: 'A-', donationType: 'red_blood_cells', units: 2, urgency: 'High', status: 'Pending', requester: 'individual@test.com' },
-    { _id: 'req2', date: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString(), bloodType: 'O+', donationType: 'whole_blood', units: 1, urgency: 'Medium', status: 'In Progress', requester: 'individual@test.com', responder: 'donor@test.com' },
-];
-
-const mockNotifications: Notification[] = [
-    { _id: 'notif1', type: 'request', requestId: 'req1', recipientEmail: 'donor@test.com', requesterEmail: 'individual@test.com', requesterName: 'Jane Smith', message: 'New red blood cells request for A- (2 units).', bloodType: 'A-', units: 2, urgency: 'High', date: new Date().toISOString(), read: false },
-    { _id: 'notif2', type: 'response', requestId: 'req2', recipientEmail: 'individual@test.com', requesterEmail: 'donor@test.com', requesterName: 'John Doe', message: 'John Doe (Donor) has accepted your blood request.', bloodType: 'O+', units: 1, urgency: 'Medium', date: new Date(Date.now() - 1 * 60 * 60 * 1000).toISOString(), read: true },
-    { _id: 'notif3', type: 'emergency', recipientEmail: 'donor@test.com', requesterEmail: 'hospital@test.com', requesterName: 'City General Hospital', message: 'Emergency broadcast from City General Hospital: "Critical need for O- blood due to major accident."', bloodType: 'O-', units: 5, urgency: 'Critical', date: new Date(Date.now() - 10 * 60 * 1000).toISOString(), read: false, requestId: 'emergency1' },
-];
-
-const mockDonationHistory: Donation[] = [
-    { _id: 'hist1', donorEmail: 'donor@test.com', date: '2023-08-15T00:00:00.000Z', location: 'City General Hospital', recipient: 'City General Hospital', units: 1, bloodType: 'O+' },
-];
-
-const mockOffers: BloodOffer[] = [
-    { _id: 'offer1', creatorEmail: 'hospital@test.com', creatorName: 'City General Hospital', bloodType: 'A+', donationType: 'whole_blood', units: 5, message: 'Surplus units available.', date: new Date().toISOString(), status: 'Available' },
-];
 
 
 // Helper function to get the database and a collection
@@ -121,20 +86,9 @@ export const getUser = async (email: string): Promise<User | null> => {
       status: 'active',
     }
   }
-  try {
-      const users = await getCollection('users');
-      const user = await users.findOne({ email }) as WithId<DbUser> | null;
-
-      if (user) {
-        return serializeObject(user);
-      }
-      const mockUser = mockUsers.find(u => u.email === email);
-      return mockUser ? { ...mockUser } : null;
-  } catch (error) {
-      console.error("Database error fetching user, falling back to mock data.", error);
-      const mockUser = mockUsers.find(u => u.email === email);
-      return mockUser ? { ...mockUser } : null;
-  }
+  const users = await getCollection('users');
+  const user = await users.findOne({ email }) as WithId<DbUser> | null;
+  return user ? serializeObject(user) : null;
 };
 
 export const updateUser = async (
@@ -153,17 +107,9 @@ export const updateUser = async (
 // --- Admin Actions ---
 
 export async function getAllUsers(): Promise<User[]> {
-  try {
-    const usersCollection = await getCollection('users');
-    const users = await usersCollection.find({ role: { $ne: 'Admin' } }).toArray() as WithId<DbUser>[];
-    if (users.length === 0) {
-        return mockUsers.filter(u => u.role !== 'Admin');
-    }
-    return users.map(u => serializeObject(u));
-  } catch (error) {
-    console.error("Database error fetching all users, falling back to mock data.", error);
-    return mockUsers.filter(u => u.role !== 'Admin');
-  }
+  const usersCollection = await getCollection('users');
+  const users = await usersCollection.find({ role: { $ne: 'Admin' } }).toArray() as WithId<DbUser>[];
+  return users.map(u => serializeObject(u));
 }
 
 export async function deleteUser(email: string): Promise<{ deletedCount?: number }> {
@@ -180,38 +126,18 @@ export async function updateUserStatus(email: string, status: 'active' | 'banned
 }
 
 export async function getSystemStats() {
-    try {
-        const users = await getCollection('users');
-        const inventory = await getCollection('blood_units');
-        const requests = await getCollection('blood_requests');
-        const transfers = await getCollection('transfers');
+    const users = await getCollection('users');
+    const inventory = await getCollection('blood_units');
+    const requests = await getCollection('blood_requests');
+    const transfers = await getCollection('transfers');
 
-        const totalUsers = await users.countDocuments({ role: { $ne: 'Admin' } });
-        const totalUnitsResult = await inventory.aggregate([{ $group: { _id: null, total: { $sum: '$units' } } }]).toArray();
-        const totalUnits = totalUnitsResult[0]?.total || 0;
-        const openRequests = await requests.countDocuments({ status: 'Pending' });
-        const totalTransfers = await transfers.countDocuments();
-
-        if (totalUsers === 0) {
-             return Promise.resolve({
-                totalUsers: 453,
-                totalUnits: 1254,
-                openRequests: 78,
-                totalTransfers: 2930,
-            });
-        }
-        
-        return { totalUsers, totalUnits, openRequests, totalTransfers };
-
-    } catch (error) {
-        console.error("Database error fetching system stats, falling back to mock data.", error);
-        return Promise.resolve({
-            totalUsers: 453,
-            totalUnits: 1254,
-            openRequests: 78,
-            totalTransfers: 2930,
-        });
-    }
+    const totalUsers = await users.countDocuments({ role: { $ne: 'Admin' } });
+    const totalUnitsResult = await inventory.aggregate([{ $group: { _id: null, total: { $sum: '$units' } } }]).toArray();
+    const totalUnits = totalUnitsResult[0]?.total || 0;
+    const openRequests = await requests.countDocuments({ status: 'Pending' });
+    const totalTransfers = await transfers.countDocuments();
+    
+    return { totalUsers, totalUnits, openRequests, totalTransfers };
 }
 
 export async function getDemandForecast(input: DemandForecastInput): Promise<DemandForecastOutput> {
@@ -380,15 +306,9 @@ export async function createEmergencyPoll(requester: User, message: string) {
 export async function getBloodRequestsForUser(
   email: string
 ): Promise<BloodRequest[]> {
-  try {
-    const requestsCollection = await getCollection('blood_requests');
-    const requests = await requestsCollection.find({ requester: email }).sort({ date: -1 }).toArray() as WithId<BloodRequest>[];
-    if (requests.length === 0 && mockRequests.some(r => r.requester === email)) return mockRequests.filter(r => r.requester === email);
-    return requests.map(r => serializeObject(r));
-  } catch (error) {
-    console.error("Database error fetching blood requests, falling back to mock data.", error);
-    return mockRequests.filter(r => r.requester === email);
-  }
+  const requestsCollection = await getCollection('blood_requests');
+  const requests = await requestsCollection.find({ requester: email }).sort({ date: -1 }).toArray() as WithId<BloodRequest>[];
+  return requests.map(r => serializeObject(r));
 }
 
 export async function cancelBloodRequest(
@@ -408,69 +328,15 @@ export async function cancelBloodRequest(
 }
 
 export async function getPotentialDonors(): Promise<User[]> {
-    try {
-        const usersCollection = await getCollection('users');
-        
-        const donors = await usersCollection.aggregate([
-            { $match: { role: { $ne: 'Admin' } } },
-            {
-                $lookup: {
-                    from: 'blood_units',
-                    localField: 'email',
-                    foreignField: 'location',
-                    as: 'inventory'
-                }
-            },
-            {
-                $addFields: {
-                    inventorySummary: {
-                        $cond: {
-                            if: { $or: [{ $eq: ['$role', 'Hospital'] }, { $eq: ['$role', 'Blood Bank'] }] },
-                            then: {
-                                whole_blood: { $sum: { $map: { input: '$inventory', as: 'unit', in: { $cond: [{ $eq: ['$$unit.donationType', 'whole_blood'] }, '$$unit.units', 0] } } } },
-                                plasma: { $sum: { $map: { input: '$inventory', as: 'unit', in: { $cond: [{ $eq: ['$$unit.donationType', 'plasma'] }, '$$unit.units', 0] } } } },
-                                red_blood_cells: { $sum: { $map: { input: '$inventory', as: 'unit', in: { $cond: [{ $eq: ['$$unit.donationType', 'red_blood_cells'] }, '$$unit.units', 0] } } } }
-                            },
-                            else: '$$REMOVE'
-                        }
-                    },
-                    availableBloodTypes: {
-                         $cond: {
-                            if: { $or: [{ $eq: ['$role', 'Hospital'] }, { $eq: ['$role', 'Blood Bank'] }] },
-                            then: { $setUnion: [ '$inventory.bloodType' ] },
-                            else: '$$REMOVE'
-                        }
-                    }
-                }
-            },
-            {
-                $project: {
-                    inventory: 0 // Exclude the full inventory from the final result
-                }
-            }
-        ]).toArray() as WithId<DbUser>[];
-
-        if (donors.length === 0) return mockUsers;
-        return donors.map(d => serializeObject(d));
-
-    } catch (error) {
-        console.error("Database error fetching potential donors, falling back to mock data.", error);
-        return mockUsers;
-    }
+    const usersCollection = await getCollection('users');
+    const donors = await usersCollection.find({ role: { $ne: 'Admin' } }).toArray() as WithId<DbUser>[];
+    return donors.map(d => serializeObject(d));
 }
 
 export async function getNotificationsForUser(email: string): Promise<Notification[]> {
-  try {
-    const notificationsCollection = await getCollection('notifications');
-    const notifications = await notificationsCollection.find({ recipientEmail: email }).sort({ date: -1 }).toArray() as WithId<Notification>[];
-    if (notifications.length === 0 && mockNotifications.some(n => n.recipientEmail === email)) {
-        return mockNotifications.filter(n => n.recipientEmail === email);
-    }
-    return notifications.map(n => serializeObject(n));
-  } catch (error) {
-    console.error("Database error fetching notifications, falling back to mock data.", error);
-    return mockNotifications.filter(n => n.recipientEmail === email);
-  }
+  const notificationsCollection = await getCollection('notifications');
+  const notifications = await notificationsCollection.find({ recipientEmail: email }).sort({ date: -1 }).toArray() as WithId<Notification>[];
+  return notifications.map(n => serializeObject(n));
 }
 
 export async function markNotificationAsRead(notificationId: string) {
@@ -541,15 +407,9 @@ export async function declineRequest(notificationId: string, requestId: string, 
 }
 
 export async function getDonationHistory(donorEmail: string): Promise<Donation[]> {
-  try {
-    const historyCollection = await getCollection('donation_history');
-    const history = await historyCollection.find({ donorEmail }).sort({ date: -1 }).toArray() as WithId<Donation>[];
-    if (history.length === 0 && mockDonationHistory.some(d => d.donorEmail === donorEmail)) return mockDonationHistory;
-    return history.map(d => serializeObject(d));
-  } catch (error) {
-    console.error("Database error fetching donation history, falling back to mock data.", error);
-    return mockDonationHistory.filter(d => d.donorEmail === donorEmail);
-  }
+  const historyCollection = await getCollection('donation_history');
+  const history = await historyCollection.find({ donorEmail }).sort({ date: -1 }).toArray() as WithId<Donation>[];
+  return history.map(d => serializeObject(d));
 }
 
 export async function addDonationHistory(donation: Omit<Donation, '_id'>): Promise<Donation> {
@@ -585,52 +445,44 @@ export async function deleteDonationHistory(donationId: string) {
 
 // --- Admin/Shared Inventory Actions ---
 export async function getAllInventory(): Promise<BloodUnit[]> {
-    try {
-        const inventoryCollection = await getCollection('blood_units');
-        
-        const inventory = await inventoryCollection.aggregate([
-            {
-                $lookup: {
-                    from: 'users',
-                    localField: 'location',
-                    foreignField: 'email',
-                    as: 'facilityInfo'
-                }
-            },
-            {
-                $unwind: {
-                    path: '$facilityInfo',
-                    preserveNullAndEmptyArrays: true
-                }
-            },
-            {
-                $project: {
-                    _id: 1,
-                    bloodType: 1,
-                    donationType: 1,
-                    units: 1,
-                    collectionDate: 1,
-                    expirationDate: 1,
-                    location: 1,
-                    locationName: '$facilityInfo.name',
-                    locationEmail: '$facilityInfo.email',
-                    locationMobile: '$facilityInfo.mobileNumber'
-                }
+    const inventoryCollection = await getCollection('blood_units');
+    
+    const inventory = await inventoryCollection.aggregate([
+        {
+            $lookup: {
+                from: 'users',
+                localField: 'location',
+                foreignField: 'email',
+                as: 'facilityInfo'
             }
-        ]).toArray() as WithId<BloodUnit>[];
-
-        if (inventory.length === 0) {
-            return mockInventory;
+        },
+        {
+            $unwind: {
+                path: '$facilityInfo',
+                preserveNullAndEmptyArrays: true
+            }
+        },
+        {
+            $project: {
+                _id: 1,
+                bloodType: 1,
+                donationType: 1,
+                units: 1,
+                collectionDate: 1,
+                expirationDate: 1,
+                location: 1,
+                locationName: '$facilityInfo.name',
+                locationEmail: '$facilityInfo.email',
+                locationMobile: '$facilityInfo.mobileNumber'
+            }
         }
-        return inventory.map(u => serializeObject(u));
-    } catch (error) {
-        console.error("Database error fetching all inventory, falling back to mock data.", error);
-        return mockInventory;
-    }
+    ]).toArray() as WithId<BloodUnit>[];
+
+    return inventory.map(u => serializeObject(u));
 }
 
 // Helper function to update a facility's inventory summary
-async function updateFacilityInventorySummary(facilityEmail: string) {
+export async function updateFacilityInventorySummary(facilityEmail: string) {
   const inventoryCollection = await getCollection('blood_units');
   const usersCollection = await getCollection('users');
 
@@ -664,15 +516,9 @@ async function updateFacilityInventorySummary(facilityEmail: string) {
 
 // Hospital Actions
 export async function getHospitalInventory(hospitalEmail: string): Promise<BloodUnit[]> {
-  try {
-    const inventoryCollection = await getCollection('blood_units');
-    const inventory = await inventoryCollection.find({ location: hospitalEmail }).toArray() as WithId<BloodUnit>[];
-    if (inventory.length === 0 && mockInventory.some(u => u.location === hospitalEmail)) return mockInventory.filter(u => u.location === hospitalEmail);
-    return inventory.map(u => serializeObject(u));
-  } catch (error) {
-    console.error("Database error fetching hospital inventory, falling back to mock data.", error);
-    return mockInventory.filter(u => u.location === hospitalEmail);
-  }
+  const inventoryCollection = await getCollection('blood_units');
+  const inventory = await inventoryCollection.find({ location: hospitalEmail }).toArray() as WithId<BloodUnit>[];
+  return inventory.map(u => serializeObject(u));
 }
 
 function getExpirationDate(collectionDate: Date, donationType: DonationType): Date {
@@ -763,41 +609,23 @@ export async function updateTransfer(transferId: string, transferData: Partial<O
 }
 
 export async function getSentTransfers(email: string): Promise<Transfer[]> {
-    try {
-        const transfers = await getCollection('transfers');
-        const sent = await transfers.find({ source: email }).sort({date: -1}).toArray() as WithId<Transfer>[];
-        if (sent.length === 0) return [{ _id: 'sent1', date: new Date().toISOString(), source: email, destination: 'County Medical Center', bloodType: 'A+', units: 5, donationType: 'whole_blood' }];
-        return sent.map(t => serializeObject(t));
-    } catch (error) {
-        console.error("Database error fetching sent transfers, falling back to mock data.", error);
-        return [{ _id: 'sent1', date: new Date().toISOString(), source: email, destination: 'County Medical Center', bloodType: 'A+', units: 5, donationType: 'whole_blood' }];
-    }
+    const transfers = await getCollection('transfers');
+    const sent = await transfers.find({ source: email }).sort({date: -1}).toArray() as WithId<Transfer>[];
+    return sent.map(t => serializeObject(t));
 }
 
 export async function getReceivedTransfers(email: string): Promise<Transfer[]> {
-    try {
-        const transfers = await getCollection('transfers');
-        const received = await transfers.find({ destination: email }).sort({date: -1}).toArray() as WithId<Transfer>[];
-        if (received.length === 0) return [{ _id: 'rec1', date: new Date().toISOString(), source: 'Regional Blood Bank', destination: email, bloodType: 'O-', units: 10, donationType: 'red_blood_cells' }];
-        return received.map(t => serializeObject(t));
-    } catch (error) {
-        console.error("Database error fetching received transfers, falling back to mock data.", error);
-        return [{ _id: 'rec1', date: new Date().toISOString(), source: 'Regional Blood Bank', destination: email, bloodType: 'O-', units: 10, donationType: 'red_blood_cells' }];
-    }
+    const transfers = await getCollection('transfers');
+    const received = await transfers.find({ destination: email }).sort({date: -1}).toArray() as WithId<Transfer>[];
+    return received.map(t => serializeObject(t));
 }
 
 
 // Blood Bank Actions
 export async function getBloodBankInventory(bloodBankEmail: string): Promise<BloodUnit[]> {
-  try {
-    const inventoryCollection = await getCollection('blood_units');
-    const inventory = await inventoryCollection.find({ location: bloodBankEmail }).toArray() as WithId<BloodUnit>[];
-    if (inventory.length === 0 && mockInventory.some(u => u.location === bloodBankEmail)) return mockInventory.filter(u => u.location === bloodBankEmail);
-    return inventory.map(u => serializeObject(u));
-  } catch (error) {
-    console.error("Database error fetching blood bank inventory, falling back to mock data.", error);
-    return mockInventory.filter(u => u.location === bloodBankEmail);
-  }
+  const inventoryCollection = await getCollection('blood_units');
+  const inventory = await inventoryCollection.find({ location: bloodBankEmail }).toArray() as WithId<BloodUnit>[];
+  return inventory.map(u => serializeObject(u));
 }
 
 export async function addBloodUnitToBank(unit: Omit<BloodUnit, '_id' | 'expirationDate'>, bloodBankEmail: string): Promise<BloodUnit> {
@@ -823,15 +651,9 @@ export async function createBloodOffer(offerData: Omit<BloodOffer, '_id' | 'date
 }
 
 export async function getBloodOffers(): Promise<BloodOffer[]> {
-    try {
-        const offers = await getCollection('blood_offers');
-        const allOffers = await offers.find({}).sort({date: -1}).toArray() as WithId<BloodOffer>[];
-        if (allOffers.length === 0) return mockOffers;
-        return allOffers.map(o => serializeObject(o));
-    } catch (error) {
-        console.error("Database error fetching blood offers, falling back to mock data.", error);
-        return mockOffers;
-    }
+    const offers = await getCollection('blood_offers');
+    const allOffers = await offers.find({}).sort({date: -1}).toArray() as WithId<BloodOffer>[];
+    return allOffers.map(o => serializeObject(o));
 }
 
 export async function claimBloodOffer(offerId: string, claimingUser: User): Promise<{ success: boolean; message: string }> {
@@ -861,7 +683,3 @@ export async function cancelBloodOffer(offerId: string, userEmail: string): Prom
     }
     return Promise.resolve({ success: false, message: 'Offer not found or permission denied.' });
 }
-
-    
-
-    

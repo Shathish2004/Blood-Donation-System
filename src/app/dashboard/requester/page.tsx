@@ -60,6 +60,7 @@ import { useSearchParams } from 'next/navigation';
 import { Suspense, useCallback } from 'react';
 import { getUser, updateUserData, User, createBloodRequest, getBloodRequestsForUser, cancelBloodRequest, getPotentialDonors, createDirectBloodRequest, createEmergencyPoll, getNotificationsForUser, respondToRequest, declineRequest } from '@/app/actions';
 import type { Notification } from '@/lib/types';
+import { indianStatesAndDistricts, states, districts } from '@/lib/indian-states-cities';
 
 const requestSchema = z.object({
   bloodType: z.string().nonempty({ message: 'Blood type is required.' }),
@@ -397,6 +398,7 @@ function RequesterPageContent() {
   const [incomingRequests, setIncomingRequests] = React.useState<Notification[]>([]);
   const [myRequestResponses, setMyRequestResponses] = React.useState<Notification[]>([]);
   const [responding, setResponding] = React.useState<string | null>(null);
+  const selectedState = filters.state as keyof typeof indianStatesAndDistricts | undefined;
 
 
   const form = useForm<RequestFormValues>({
@@ -1013,9 +1015,21 @@ function RequesterPageContent() {
                 </CardHeader>
                 <CardContent>
                     <div className="mb-6 p-4 border rounded-lg bg-card">
-                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                            <Input placeholder="City" value={filters.city} onChange={(e) => handleFilterChange('city', e.target.value)} />
-                            <Input placeholder="State" value={filters.state} onChange={(e) => handleFilterChange('state', e.target.value)} />
+                         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                            <Select value={filters.state} onValueChange={(value) => { handleFilterChange('state', value === 'all' ? '' : value); handleFilterChange('city', ''); }}>
+                                <SelectTrigger><SelectValue placeholder="State" /></SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="all">All States</SelectItem>
+                                    {states.map(state => <SelectItem key={state} value={state}>{state}</SelectItem>)}
+                                </SelectContent>
+                            </Select>
+                            <Select value={filters.city} onValueChange={(value) => handleFilterChange('city', value === 'all' ? '' : value)} disabled={!filters.state}>
+                                <SelectTrigger><SelectValue placeholder={filters.state ? "Select a district" : "Select a state first"} /></SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="all">All Districts</SelectItem>
+                                    {selectedState && districts(selectedState).map(district => <SelectItem key={district} value={district}>{district}</SelectItem>)}
+                                </SelectContent>
+                            </Select>
                              <Select value={filters.bloodType} onValueChange={(value) => handleFilterChange('bloodType', value === 'all' ? '' : value)}>
                                 <SelectTrigger><SelectValue placeholder="Blood Type" /></SelectTrigger>
                                 <SelectContent>
@@ -1170,9 +1184,8 @@ function RequesterPageContent() {
                             <FormField control={profileForm.control} name="address" render={({field}) => (
                                 <FormItem className="md:col-span-2"><FormLabel>Address</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage/></FormItem>
                             )}/>
-                            <FormField control={profileForm.control} name="city" render={({ field }) => (<FormItem><FormLabel>City</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>)} />
                             <FormField control={profileForm.control} name="state" render={({ field }) => (<FormItem><FormLabel>State</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>)} />
-                            <FormField control={profileForm.control} name="country" render={({ field }) => (<FormItem><FormLabel>Country</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>)} />
+                            <FormField control={profileForm.control} name="city" render={({ field }) => (<FormItem><FormLabel>District</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>)} />
                         </CardContent>
                         <CardFooter>
                             <Button type="submit" disabled={profileForm.formState.isSubmitting}>
@@ -1196,5 +1209,3 @@ export default function RequesterPage() {
         </Suspense>
     )
 }
-
-    

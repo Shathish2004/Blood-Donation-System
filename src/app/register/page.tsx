@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useForm } from 'react-hook-form';
@@ -35,14 +36,15 @@ import { Droplet, Eye, EyeOff } from 'lucide-react';
 import React, { useState } from 'react';
 import { bloodTypes } from '@/lib/data';
 import { saveUser, getUser } from '@/app/actions';
+import { indianStatesAndDistricts, states, districts } from '@/lib/indian-states-cities';
 
 const baseSchema = z.object({
   email: z.string().email({ message: 'Invalid email address.' }),
   password: z.string().min(8, { message: 'Password must be at least 8 characters.' }),
   mobileNumber: z.string().min(10, { message: 'Must be a valid mobile number.' }),
-  city: z.string().min(2, { message: 'City is required.' }),
   state: z.string().min(2, { message: 'State is required.' }),
-  country: z.string().min(2, { message: 'Country is required.' }),
+  city: z.string().min(2, { message: 'District is required.' }),
+  country: z.literal('India'),
 });
 
 const individualSchema = baseSchema.extend({
@@ -99,10 +101,11 @@ export default function RegisterPage() {
 
   const form = useForm<RegisterFormValues>({
     resolver: zodResolver(registerSchema),
-    defaultValues: { role: 'Donor', name: '', address: '', bloodType: '', email: '', password: '', mobileNumber: '', city: '', state: '', country: '', licenseNo: '', location: '' }
+    defaultValues: { role: 'Donor', name: '', address: '', bloodType: '', email: '', password: '', mobileNumber: '', city: '', state: '', country: 'India', licenseNo: '', location: '' }
   });
 
   const selectedRole = form.watch('role');
+  const selectedState = form.watch('state') as keyof typeof indianStatesAndDistricts | undefined;
 
   const onSubmit = async (data: RegisterFormValues) => {
     try {
@@ -178,7 +181,7 @@ export default function RegisterPage() {
                             mobileNumber: '',
                             city: '',
                             state: '',
-                            country: '',
+                            country: 'India',
                           });
                        }} defaultValue={field.value}>
                         <FormControl>
@@ -270,7 +273,6 @@ export default function RegisterPage() {
                       )}
                     />
 
-                    {/* Individual/Donor Fields */}
                     {(selectedRole === 'Individual' || selectedRole === 'Donor') && (
                       <>
                         <FormField control={form.control} name="address" render={({ field }) => (<FormItem className="md:col-span-2"><FormLabel>Address</FormLabel><FormControl><Input placeholder="123 Main St" {...field} /></FormControl><FormMessage /></FormItem>)} />
@@ -278,7 +280,6 @@ export default function RegisterPage() {
                       </>
                     )}
 
-                    {/* Hospital/Blood Bank Fields */}
                     {(selectedRole === 'Hospital' || selectedRole === 'Blood Bank') && (
                         <>
                             <FormField control={form.control} name="licenseNo" render={({ field }) => (<FormItem><FormLabel>{selectedRole === 'Hospital' ? 'Hospital License Number' : 'Blood Bank License Number'}</FormLabel><FormControl><Input placeholder="LIC123456" {...field} /></FormControl><FormMessage /></FormItem>)} />
@@ -286,9 +287,34 @@ export default function RegisterPage() {
                         </>
                     )}
                     
-                    <FormField control={form.control} name="city" render={({ field }) => (<FormItem><FormLabel>City</FormLabel><FormControl><Input placeholder="e.g., New York" {...field} /></FormControl><FormMessage /></FormItem>)} />
-                    <FormField control={form.control} name="state" render={({ field }) => (<FormItem><FormLabel>State</FormLabel><FormControl><Input placeholder="e.g., NY" {...field} /></FormControl><FormMessage /></FormItem>)} />
-                    <FormField control={form.control} name="country" render={({ field }) => (<FormItem><FormLabel>Country</FormLabel><FormControl><Input placeholder="e.g., USA" {...field} /></FormControl><FormMessage /></FormItem>)} />
+                    <FormField
+                        control={form.control}
+                        name="state"
+                        render={({ field }) => (
+                            <FormItem>
+                                <FormLabel>State</FormLabel>
+                                <Select onValueChange={(value) => { field.onChange(value); form.setValue('city', ''); }} defaultValue={field.value}>
+                                    <FormControl><SelectTrigger><SelectValue placeholder="Select a state" /></SelectTrigger></FormControl>
+                                    <SelectContent>{states.map(state => <SelectItem key={state} value={state}>{state}</SelectItem>)}</SelectContent>
+                                </Select>
+                                <FormMessage />
+                            </FormItem>
+                        )}
+                    />
+                     <FormField
+                        control={form.control}
+                        name="city"
+                        render={({ field }) => (
+                            <FormItem>
+                                <FormLabel>District</FormLabel>
+                                <Select onValueChange={field.onChange} defaultValue={field.value} disabled={!selectedState}>
+                                    <FormControl><SelectTrigger><SelectValue placeholder={selectedState ? "Select a district" : "Select a state first"} /></SelectTrigger></FormControl>
+                                    <SelectContent>{selectedState && districts(selectedState).map(district => <SelectItem key={district} value={district}>{district}</SelectItem>)}</SelectContent>
+                                </Select>
+                                <FormMessage />
+                            </FormItem>
+                        )}
+                    />
                 </div>
               </CardContent>
               <CardFooter className="flex-col items-stretch gap-4">

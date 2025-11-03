@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useForm } from 'react-hook-form';
@@ -75,7 +76,7 @@ function LoginComponent() {
         toast({
             variant: 'destructive',
             title: 'Login Failed',
-            description: 'No registration data found for this email. Please register first.',
+            description: 'No registration data found for this email. Please run `npm run seed` or register first.',
         });
         return;
     }

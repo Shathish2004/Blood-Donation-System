@@ -4,8 +4,8 @@ import { cn } from '@/lib/utils';
 import { Toaster } from '@/components/ui/toaster';
 
 export const metadata: Metadata = {
-  title: 'Centralized Blood Donation System',
-  description: 'A centralized platform for managing blood donations and requests.',
+  title: 'BloodNet: AI Blood Donation Management System',
+  description: 'AI-Enabled Cloud-Based Blood Donation, Request & Inventory Management System.',
 };
 
 export default function RootLayout({

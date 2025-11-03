@@ -59,6 +59,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Calendar } from '@/components/ui/calendar';
 import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { indianStatesAndDistricts, states, districts } from '@/lib/indian-states-cities';
 
 
 const unitSchema = z.object({
@@ -625,6 +626,7 @@ function BloodBankPageContent() {
   const [responding, setResponding] = useState<string | null>(null);
   const [filters, setFilters] = useState({ city: '', state: '', bloodType: '', role: '', donationType: '' });
   const [appliedFilters, setAppliedFilters] = useState({ city: '', state: '', bloodType: '', role: '', donationType: '' });
+  const selectedState = filters.state as keyof typeof indianStatesAndDistricts | undefined;
 
 
   const handleSave = useCallback(async () => {
@@ -1231,8 +1233,20 @@ function BloodBankPageContent() {
           <CardContent>
             <div className="mb-6 p-4 border rounded-lg bg-card">
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                    <Input placeholder="City" value={filters.city} onChange={(e) => handleFilterChange('city', e.target.value)} />
-                    <Input placeholder="State" value={filters.state} onChange={(e) => handleFilterChange('state', e.target.value)} />
+                    <Select value={filters.state} onValueChange={(value) => { handleFilterChange('state', value === 'all' ? '' : value); handleFilterChange('city', ''); }}>
+                        <SelectTrigger><SelectValue placeholder="State" /></SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="all">All States</SelectItem>
+                            {states.map(state => <SelectItem key={state} value={state}>{state}</SelectItem>)}
+                        </SelectContent>
+                    </Select>
+                    <Select value={filters.city} onValueChange={(value) => handleFilterChange('city', value === 'all' ? '' : value)} disabled={!filters.state}>
+                        <SelectTrigger><SelectValue placeholder={filters.state ? "District" : "Select a state first"} /></SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="all">All Districts</SelectItem>
+                            {selectedState && districts(selectedState).map(district => <SelectItem key={district} value={district}>{district}</SelectItem>)}
+                        </SelectContent>
+                    </Select>
                      <Select value={filters.bloodType} onValueChange={(value) => handleFilterChange('bloodType', value === 'all' ? '' : value)}>
                         <SelectTrigger><SelectValue placeholder="Blood Type" /></SelectTrigger>
                         <SelectContent>
@@ -1594,13 +1608,5 @@ function BloodBankPageContent() {
 
       {view === 'analysis' && <AITools onSave={handleSave} />}
     </div>
-  );
-}
-
-export default function BloodBankPage() {
-  return (
-    <Suspense fallback={<div className="flex items-center justify-center h-full"><LoaderCircle className="h-8 w-8 animate-spin" /><p className="ml-2">Loading...</p></div>}>
-      <BloodBankPageContent />
-    </Suspense>
   );
 }

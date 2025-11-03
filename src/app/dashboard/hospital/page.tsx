@@ -66,6 +66,7 @@ import { Form, FormControl, FormField, FormMessage, FormLabel, FormItem } from '
 import { useSearchParams } from 'next/navigation';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { AITools } from './ai-tools';
+import { indianStatesAndDistricts, states, districts } from '@/lib/indian-states-cities';
 
 const unitSchema = z.object({
   bloodType: z.string().nonempty("Blood type is required."),
@@ -710,6 +711,8 @@ function HospitalPageContent() {
   const [potentialDonors, setPotentialDonors] = React.useState<User[]>([]);
   const [filters, setFilters] = React.useState({ city: '', state: '', bloodType: '', role: '', donationType: '' });
   const [appliedFilters, setAppliedFilters] = React.useState({ city: '', state: '', bloodType: '', role: '', donationType: '' });
+  const selectedState = filters.state as keyof typeof indianStatesAndDistricts | undefined;
+
 
   const handleSave = React.useCallback(async () => {
     const email = sessionStorage.getItem('currentUserEmail');
@@ -1309,8 +1312,20 @@ function HospitalPageContent() {
           <CardContent>
             <div className="mb-6 p-4 border rounded-lg bg-card">
                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                    <Input placeholder="City" value={filters.city} onChange={(e) => handleFilterChange('city', e.target.value)} />
-                    <Input placeholder="State" value={filters.state} onChange={(e) => handleFilterChange('state', e.target.value)} />
+                    <Select value={filters.state} onValueChange={(value) => { handleFilterChange('state', value === 'all' ? '' : value); handleFilterChange('city', ''); }}>
+                        <SelectTrigger><SelectValue placeholder="State" /></SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="all">All States</SelectItem>
+                            {states.map(state => <SelectItem key={state} value={state}>{state}</SelectItem>)}
+                        </SelectContent>
+                    </Select>
+                    <Select value={filters.city} onValueChange={(value) => handleFilterChange('city', value === 'all' ? '' : value)} disabled={!filters.state}>
+                        <SelectTrigger><SelectValue placeholder={filters.state ? "Select a district" : "Select a state first"} /></SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="all">All Districts</SelectItem>
+                            {selectedState && districts(selectedState).map(district => <SelectItem key={district} value={district}>{district}</SelectItem>)}
+                        </SelectContent>
+                    </Select>
                      <Select value={filters.bloodType} onValueChange={(value) => handleFilterChange('bloodType', value === 'all' ? '' : value)}>
                         <SelectTrigger><SelectValue placeholder="Blood Type" /></SelectTrigger>
                         <SelectContent>
