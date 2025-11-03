@@ -1,5 +1,7 @@
 
 'use client';
+export const dynamic = 'force-dynamic';
+
 import * as React from 'react';
 import {
   Card,
@@ -1510,69 +1512,73 @@ function BloodBankPageContent() {
       {view === 'request-history' && (
         <Card className="shadow-md">
           <CardHeader>
-            <CardTitle>Inventory Overview</CardTitle>
+            <CardTitle>Request History</CardTitle>
             <CardDescription>
-              A read-only view of all blood units in the system.
+              A log of past blood requests from your facility.
             </CardDescription>
           </CardHeader>
           <CardContent>
              {/* Mobile View */}
             <div className="space-y-4 md:hidden">
-              {requestHistory.map((unit) => (
-                  <Card key={unit._id} className="p-4">
+              {requestHistory.map((request) => (
+                  <Card key={request._id} className="p-4">
                        <div className="flex justify-between items-start mb-4">
                            <div>
-                                <p className="font-bold">{unit.locationName || unit.location}</p>
-                                <p className="text-sm text-muted-foreground">{unit.units} units of {unit.bloodType}</p>
+                                <p className="font-bold">{format(parseISO(request.date), 'PP')}</p>
+                                <p className="text-sm text-muted-foreground">{request.units} units of {request.bloodType}</p>
                            </div>
-                           <Badge variant={ 'secondary' } className={cn(getUnitStatus(unit.expirationDate).color, 'text-white')}>
-                                {getUnitStatus(unit.expirationDate).label}
+                           <Badge variant={ request.status === 'Fulfilled' ? 'default' : 'secondary' } className={cn( request.status === 'Fulfilled' && 'bg-green-600 text-white', request.status === 'In Progress' && 'bg-blue-500 text-white', request.status === 'Pending' && 'bg-yellow-500 text-white', request.status === 'Declined' && 'bg-red-500 text-white' )}>
+                                {request.status}
                             </Badge>
                        </div>
-                       <div className="flex justify-between items-center text-sm">
-                           <span>Expires: {format(parseISO(unit.expirationDate), 'PP')}</span>
+                       <div className="flex justify-end">
+                          <Badge variant="outline" className={cn("dark:!text-black", urgencyColors[request.urgency])}>{request.urgency}</Badge>
                        </div>
                   </Card>
               ))}
-              {requestHistory.length === 0 && <div className="text-center h-24 flex items-center justify-center"><p>No inventory found.</p></div>}
+              {requestHistory.length === 0 && <div className="text-center h-24 flex items-center justify-center"><p>No request history.</p></div>}
             </div>
             {/* Desktop View */}
             <div className="hidden md:block">
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Facility & Contact</TableHead>
+                    <TableHead>Date</TableHead>
                     <TableHead>Blood Type</TableHead>
                     <TableHead>Units</TableHead>
-                    <TableHead>Collection Date</TableHead>
-                    <TableHead>Expiration Date</TableHead>
+                    <TableHead>Urgency</TableHead>
                     <TableHead>Status</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {requestHistory.map((unit) => {
-                    const status = getUnitStatus(unit.expirationDate);
-                    return (
-                    <TableRow key={unit._id}>
-                       <TableCell>
-                            <div className="font-medium">{unit.locationName || unit.location}</div>
-                            <div className="text-xs text-muted-foreground">{unit.locationEmail || 'N/A'}</div>
-                            <div className="text-xs text-muted-foreground">{unit.locationMobile || 'N/A'}</div>
-                        </TableCell>
+                  {requestHistory.map((request) => (
+                    <TableRow key={request._id}>
+                      <TableCell>{format(parseISO(request.date), 'PP')}</TableCell>
                       <TableCell>
-                        <Badge variant="outline" className="text-primary border-primary/50">{unit.bloodType}</Badge>
+                        <Badge variant="outline" className="text-primary border-primary/50">{request.bloodType}</Badge>
                       </TableCell>
-                      <TableCell>{unit.units}</TableCell>
-                      <TableCell>{format(parseISO(unit.collectionDate), 'PP')}</TableCell>
-                      <TableCell>{format(parseISO(unit.expirationDate), 'PP')}</TableCell>
+                      <TableCell>{request.units}</TableCell>
                       <TableCell>
-                        <Badge variant="secondary" className={cn('text-white', status.color)}>
-                            {status.icon} {status.label}
+                        <Badge variant="outline" className={cn("dark:!text-black", urgencyColors[request.urgency])}>{request.urgency}</Badge>
+                      </TableCell>
+                      <TableCell>
+                        <Badge
+                          variant={
+                            request.status === 'Fulfilled' ? 'default' : 'secondary'
+                          }
+                          className={cn(
+                            request.status === 'Fulfilled' && 'bg-green-600 text-white',
+                            request.status === 'In Progress' && 'bg-blue-500 text-white',
+                            request.status === 'Pending' && 'bg-yellow-500 text-white',
+                            request.status === 'Declined' && 'bg-red-500 text-white'
+                          )}
+                        >
+                          {request.status}
                         </Badge>
                       </TableCell>
                     </TableRow>
-                  )})}
-                  {requestHistory.length === 0 && <TableRow><TableCell colSpan={6} className="h-24 text-center">No inventory data found.</TableCell></TableRow>}
+                  ))}
+                  {requestHistory.length === 0 && <TableRow><TableCell colSpan={5} className="h-24 text-center">No request history.</TableCell></TableRow>}
                 </TableBody>
               </Table>
             </div>
@@ -1605,8 +1611,6 @@ function BloodBankPageContent() {
           <TabsContent value="red_blood_cells" className="mt-4">{renderTransferHistory('received', 'red_blood_cells')}</TabsContent>
         </Tabs>
       )}
-
-      {view === 'analysis' && <AITools onSave={handleSave} />}
     </div>
   );
 }
